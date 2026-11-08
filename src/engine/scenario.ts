@@ -32,7 +32,7 @@ export function scenario(setup: Setup, sides: [SideSpec, SideSpec]): GameState {
 	s.log = [`Drill: ${s.players[0].name} vs ${s.players[1].name}.`]
 	const take = (p: number, id: string): Obj => {
 		const pl = s.players[p]
-		for (const zone of [pl.library, pl.hand]) {
+		for (const zone of [pl.library, pl.hand, pl.command]) {
 			const i = zone.findIndex((o) => o.card === id)
 			if (i >= 0) return zone.splice(i, 1)[0]
 		}
