@@ -1018,7 +1018,10 @@ function ChooseModal({ s, me, act, onHover, hb, hint }: { s: GameState; me: numb
 		}
 		setPick(pick.includes(id) ? pick.filter((x) => x !== id) : pick.length < q.max ? [...pick, id] : pick)
 	}
-	const hinted = (id: string) => (hint?.options?.includes(id) ? 'hint' : '')
+	const hinted = (id: string) => {
+		const o = q.options.find((x) => x.id === id)
+		return hint?.options?.includes(id) || (o?.iid !== undefined && hint?.perms?.includes(o.iid)) ? 'hint' : ''
+	}
 	const asCards = q.options.some((o) => o.card) && (q.cards || q.options.every((o) => o.card))
 	const onBoard = q.options.some((o) => o.iid !== undefined && findPerm(s, o.iid))
 	if (hidden)

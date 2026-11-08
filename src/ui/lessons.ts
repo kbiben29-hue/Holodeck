@@ -210,7 +210,7 @@ export const DRILLS: Drill[] = [
 				seed,
 			),
 		steps: (s) => [
-			{ text: 'You drew your first card this turn in your draw step. Click Commander William Riker and use his ability ({1}, tap: you and target opponent each draw two cards). Choose the Ensign as the opponent.', hint: { perms: [perm(s, 0, 'Commander William Riker')], buttons: ['{1}'] }, done: (x) => x.players[0].drawsThisTurn! >= 3 || x.stack.some((i) => i.card === ID('Commander William Riker')) },
+			{ text: 'You drew your first card this turn in your draw step. Click Commander William Riker and use his ability ({1}, tap: you and target opponent each draw two cards). Choose the Ensign as the opponent.', hint: { perms: [perm(s, 0, 'Commander William Riker')], buttons: ['{1}', 'Ensign'] }, done: (x) => x.players[0].drawsThisTurn! >= 3 || x.stack.some((i) => i.card === ID('Commander William Riker')) },
 			{ text: 'Riker’s ability is on the stack. Let it resolve: you draw two cards — and the first one is your second card this turn. All three Seek outs trigger.', hint: { buttons: ['Resolve'] }, done: (x) => x.players[0].drawsThisTurn! >= 2 && !x.stack.some((i) => i.card === ID('Commander William Riker')) },
 			{ text: 'Resolve the Seek out triggers: Ro Laren deals 2 to the Ensign, Rom and Leeta make two Treasures, Dr. Pulaski gains you 4 life.', hint: { buttons: ['Resolve'] }, done: (x) => x.stack.length === 0 },
 		],
@@ -258,7 +258,7 @@ export const DRILLS: Drill[] = [
 				seed,
 			),
 		steps: (s) => [
-			{ text: 'The Queen makes your artifact creatures +2/+2: she’s 6/6 and each drone is 3/3 — exactly 12. But Kirk would block one. Cast Dispatch on Kirk: you control three artifacts, so Metalcraft exiles him.', hint: { hand: [inHand(s, 0, 'Dispatch')], buttons: ['Cast'] }, done: (x) => perm(x, 1, 'Captain Kirk, Boldly Going') === -1 },
+			{ text: 'The Queen makes your artifact creatures +2/+2: she’s 6/6 and each drone is 3/3 — exactly 12. But Kirk would block one. Cast Dispatch on Kirk: you control three artifacts, so Metalcraft exiles him.', hint: { hand: [inHand(s, 0, 'Dispatch')], perms: [perm(s, 1, 'Captain Kirk, Boldly Going')], buttons: ['Cast'] }, done: (x) => perm(x, 1, 'Captain Kirk, Boldly Going') === -1 },
 			{ text: 'The way is clear. Press Go to combat.', hint: { buttons: ['Go to combat'] }, done: (x) => x.step !== 'main1' },
 			{ text: 'Attack with the Queen and both drones.', hint: { perms: s.battlefield.filter((q) => q.controller === 0 && isCreature(s, q)).map((q) => q.iid), buttons: ['All', 'Attack'] }, done: attacked },
 			{ text: 'The Queen’s attack trigger assimilates a creature from the top of the Ensign’s library — do it by hand or skip it. The damage does the rest.', hint: { buttons: ['Resolve', 'Done'] }, done: oppLife(0) },
