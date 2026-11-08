@@ -1,0 +1,14 @@
+node_modules/
+dist/
+*.tsbuildinfo
+
+# Card data is fetched from Scryfall on each player's device and never committed.
+public/cards/
+vendor/
+
+.screens/
+.DS_Store
+
+# Tauri desktop build output
+src-tauri/target/
+src-tauri/gen/
