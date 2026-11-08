@@ -10,6 +10,8 @@ import type { CardDef, Color, Mana } from './types'
 export interface Filter {
 	/** Card types, any of (lower case). Empty = any permanent. */
 	types: string[]
+	/** Types it must also have ("artifact creature" = artifact AND creature). */
+	and?: string[]
 	/** Types it must not have. */
 	not: string[]
 	controller?: 'you' | 'opp'
@@ -99,6 +101,9 @@ export interface ManaAbility {
 }
 
 export interface Activated {
+	threshold?: number
+	/** Station: tap another creature you control, put charge counters equal to its power. */
+	station?: boolean
 	index: number
 	text: string
 	cost: AbilityCost
@@ -112,9 +117,10 @@ export interface Activated {
 	loyalty?: boolean
 }
 
-export type TriggerEvent = 'etb' | 'attacks' | 'dies' | 'upkeep' | 'endStep' | 'beginCombat' | 'combatDamagePlayer' | 'landfall' | 'otherEtb' | 'ltb' | 'cast' | 'blocks'
+export type TriggerEvent = 'etb' | 'attacks' | 'dies' | 'upkeep' | 'endStep' | 'beginCombat' | 'combatDamagePlayer' | 'landfall' | 'otherEtb' | 'ltb' | 'cast' | 'blocks' | 'secondDraw' | 'youAttack'
 
 export interface Trigger {
+	threshold?: number
 	index: number
 	event: TriggerEvent
 	text: string
@@ -127,6 +133,8 @@ export interface Trigger {
 }
 
 export interface Static {
+	/** Only while the permanent has at least this many charge counters (Station). */
+	threshold?: number
 	kind: 'anthem' | 'equip' | 'aura'
 	power: number
 	toughness: number
@@ -156,6 +164,10 @@ export interface Rules {
 	canBeCountered: boolean
 	/** Every line of text was understood. */
 	fullyAutomated: boolean
+	/** Spacecraft: becomes an artifact creature at this many charge counters. */
+	stationCreatureAt?: number
+	/** Keywords that need a number of charge counters. */
+	thresholdKeywords?: { n: number; keywords: string[] }[]
 }
 
 const KEYWORDS = [
@@ -176,7 +188,30 @@ function normalise(def: { name: string; oracle: string }): string {
 	for (const n of names) if (n.length > 1) t = t.split(n).join(SELF)
 	t = t.replace(/\b[Tt]his (creature|artifact|land|enchantment|spell|card|equipment|Equipment|Vehicle|vehicle|permanent|Spacecraft|token|Aura|aura|planeswalker|Planet|planet|battle)\b/g, SELF)
 	t = t.replace(/−/g, '-')
+	// Two-player game: "the number of opponents you attacked this turn" / "you have" is 1.
+	t = t
+		.split('\n')
+		.map((line) =>
+			/where X is the number of opponents you (attacked this turn|have)/.test(line)
+				? line
+						.replace(/,? where X is the number of opponents you (attacked this turn|have)/, '')
+						.replace(/\+X\/\+X/g, '+1/+1')
+						.replace(/\bX cards\b/g, 'a card')
+						.replace(/\bX life\b/g, '1 life')
+						.replace(/\bX\b/g, 'one')
+				: line,
+		)
+		.join('\n')
+	t = t.replace(/a number of (.+?) equal to the number of opponents you have/g, 'a $1')
+	t = t.replace(/for each opponent you attacked this turn, /g, '')
 	return t
+}
+
+/** "Seek out — Whenever…", "Landfall — Whenever…", "Battlefront — …": the ability word has no rules meaning. */
+function stripAbilityWord(line: string): string {
+	const m = line.match(/^([A-Z][A-Za-z'’!. -]{1,40}?) — (.+)$/)
+	if (!m || /^[IVX]+$/.test(m[1])) return line
+	return m[2]
 }
 
 const stripReminder = (s: string) => s.replace(/\s*\([^)]*\)/g, '').trim()
@@ -221,10 +256,11 @@ export function parseFilter(raw: string): Filter | null {
 			}
 		}
 	}
-	const words = s.replace(/,? or /g, ',').replace(/, and /g, ',').split(/\s*,\s*/)
+	const words = s.replace(/,? or /g, ',').replace(/,? and /g, ',').split(/\s*,\s*/)
 	for (const w0 of words) {
 		const parts = w0.trim().split(/\s+/)
 		let typeFound = false
+		const before = f.types.length
 		for (const p of parts) {
 			if (p === 'tapped') f.tapped = true
 			else if (p === 'untapped') f.tapped = false
@@ -240,6 +276,11 @@ export function parseFilter(raw: string): Filter | null {
 				typeFound = true
 			} else if (/^[a-z][a-z'-]+$/.test(p) && !typeFound) (f.subtypes ??= []).push(p.replace(/s$/, ''))
 			else return null
+		}
+		// several type words in one phrase ("artifact creatures") must all apply
+		if (f.types.length - before > 1) {
+			const extra = f.types.splice(before + 1)
+			f.and = [...(f.and ?? []), ...extra]
 		}
 	}
 	return f
@@ -287,6 +328,7 @@ export function compile(text: string, defName = ''): Compiled | null {
 		t = t.replace(/^you may /i, '')
 		t = t[0].toUpperCase() + t.slice(1)
 	}
+	t = t[0].toUpperCase() + t.slice(1)
 	const sentences = t
 		.split(/(?<=\.)\s+/)
 		.map((x) => x.trim())
@@ -312,7 +354,12 @@ function compileSentence(s: string, out: Compiled, defName: string): boolean {
 		return true
 	}
 	// draw
-	if ((m = lower.match(/^(?:you )?draw (a|an|one|two|three|four|five|six|seven|x|\d+) cards?(?: and you lose (\w+) life)?$/))) {
+	if ((m = lower.match(/^you and target opponent each draw (a|an|one|two|three|\d+) cards?$/))) {
+		addTarget(out, { kind: 'player', opponent: true })
+		out.effects.push({ e: 'draw', n: num(m[1]), who: 'you' }, { e: 'draw', n: num(m[1]), who: 'target' })
+		return true
+	}
+	if ((m = lower.match(/^(?:you )?draw (a|an|one|two|three|four|five|six|seven|x|\d+) cards?(?: and (?:you )?lose (\w+) life)?$/))) {
 		out.effects.push({ e: 'draw', n: num(m[1]), who: 'you' })
 		if (m[2]) out.effects.push({ e: 'loseLife', n: num(m[2]), who: 'you' })
 		return true
@@ -691,10 +738,26 @@ export function parse(def: { name: string; oracle: string; typeLine: string }): 
 	}
 	const spellLines: string[] = []
 	const isSpell = types.includes('instant') || types.includes('sorcery')
-	lines.forEach((line, index) => {
+	const handle = (line0: string, index: number): void => {
+		const line = stripAbilityWord(line0)
+		if (/^Station\b/.test(line)) {
+			const cm = line.match(/artifact creature at (\d+)\+/)
+			if (cm) r.stationCreatureAt = Number(cm[1])
+			r.activated.push({
+				index,
+				text: 'Station',
+				station: true,
+				sorcery: true,
+				oncePerTurn: false,
+				cost: { mana: '', tap: false, sacrificeSelf: false, life: 0 },
+				effectText: 'Tap another creature you control: put charge counters equal to its power on this.',
+				compiled: { targets: [], effects: [] },
+			})
+			return
+		}
 		const plain = stripReminder(line)
 		if (!plain) {
-			// pure reminder text line e.g. basic land "({T}: Add {G}.)"
+			// pure reminder text line, e.g. a basic land "({T}: Add {G}.)"
 			const inner = line.replace(/^\(|\)$/g, '')
 			const mm = inner.match(/^\{T\}: (Add .+)$/)
 			if (mm) {
@@ -769,7 +832,15 @@ export function parse(def: { name: string; oracle: string; typeLine: string }): 
 			let event: TriggerEvent | null = null
 			let filter: Filter | undefined
 			let fm: RegExpMatchArray | null
-			if (/^~ enters$/.test(cond) || /^~ enters the battlefield$/.test(cond)) event = 'etb'
+			if (/^~ enters or attacks$/.test(cond)) {
+				const compiled = conditional0(effectText) ? null : compile(effectText, def.name)
+				r.triggers.push({ index, event: 'etb', text: line, effectText, compiled }, { index, event: 'attacks', text: line, effectText, compiled })
+				if (!compiled) r.fullyAutomated = false
+				return
+			}
+			if (/^you draw your second card each turn$/.test(cond)) event = 'secondDraw'
+			else if (/^you attack$/.test(cond)) event = 'youAttack'
+			else if (/^~ enters$/.test(cond) || /^~ enters the battlefield$/.test(cond)) event = 'etb'
 			else if (/^~ attacks$/.test(cond)) event = 'attacks'
 			else if (/^~ blocks$/.test(cond)) event = 'blocks'
 			else if (/^~ dies$/.test(cond)) event = 'dies'
@@ -845,6 +916,23 @@ export function parse(def: { name: string; oracle: string; typeLine: string }): 
 			return
 		}
 		r.fullyAutomated = false
+	}
+	let threshold: number | undefined
+	lines.forEach((line, index) => {
+		const th = line.match(/^(\d+)\+ \| (.+)$/)
+		if (th) threshold = Number(th[1])
+		if (threshold === undefined) return handle(line, index)
+		const k0 = r.keywords.length
+		const s0 = r.statics.length
+		const t0 = r.triggers.length
+		const a0 = r.activated.length
+		handle(th ? th[2] : line, index)
+		const n = threshold
+		const newK = r.keywords.splice(k0)
+		if (newK.length) (r.thresholdKeywords ??= []).push({ n, keywords: newK })
+		r.statics.slice(s0).forEach((x) => (x.threshold = n))
+		r.triggers.slice(t0).forEach((x) => (x.threshold = n))
+		r.activated.slice(a0).forEach((x) => (x.threshold = n))
 	})
 	if (isSpell) {
 		r.spellText = spellLines.join(' ').replace(/\s*~ can't be countered\.\s*/, ' ').trim()
@@ -854,6 +942,8 @@ export function parse(def: { name: string; oracle: string; typeLine: string }): 
 	r.hasX = /\{X\}/.test(def.oracle)
 	return r
 }
+
+const conditional0 = (t: string) => /^if /i.test(t)
 
 export function hasType(r: Rules, t: string): boolean {
 	return r.types.includes(t)

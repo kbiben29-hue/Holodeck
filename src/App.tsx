@@ -9,15 +9,39 @@ import { clearJoinFromUrl, isGuestMsg, isHostMsg, joinCodeFromUrl, joinLink, str
 import { hostGame, joinGame, newGameCode, type Conn, type Host } from './net/transport'
 import { Board, type LayoutChoice } from './ui/Board'
 import { Setup, type SetupResult } from './ui/Setup'
+import { coachFor, INTRO, type CoachStep } from './ui/coach'
+import { comboNote, deckName, DRILLS, drillCoach, drillsFor, PLANS, type DeckId } from './ui/lessons'
 
 const W = 1600
 const H = 1000
 const SAVE = 'holodeck.save.v1'
 const LAYOUT_KEY = 'holodeck.layout'
 
+interface Tutorial {
+	/** index into the intro pages; pages.length = intro finished */
+	intro: number
+	/** coach steps already explained in full */
+	seen: string[]
+	/** one-off note waiting to be dismissed (combo alerts) */
+	note: CoachStep | null
+	deck?: DeckId
+	drill?: string
+}
+
+/** Pages shown before play: the general intro, a deck's game plan, or a drill's goal. */
+function pagesFor(t: Tutorial): { title: string; body: string }[] {
+	if (t.drill) {
+		const d = DRILLS.find((x) => x.id === t.drill)!
+		return [{ title: d.title, body: `${deckName(d.deck)} combo drill. Goal: ${d.goal} The coach walks you through it step by step — whatever glows is the next move.` }]
+	}
+	if (t.deck) return PLANS[t.deck]
+	return INTRO
+}
+
 interface Session {
 	history: GameState[]
 	bot: boolean
+	tutorial?: Tutorial
 	online?: { role: 'host' | 'guest'; code: string; seat: number }
 }
 
@@ -86,6 +110,7 @@ export default function App() {
 	const [net, setNet] = useState<{ ok: boolean; text: string } | null>(null)
 	const [netError, setNetError] = useState<string | null>(null)
 	const [joinCode, setJoinCode] = useState<string | null>(() => joinCodeFromUrl())
+	const [lessonsOpen, setLessonsOpen] = useState(false)
 	const sessionRef = useRef<Session | null>(null)
 	const lobbyRef = useRef<Lobby | null>(null)
 	const hostRef = useRef<Host | null>(null)
@@ -134,7 +159,16 @@ export default function App() {
 				connRef.current.send({ type: 'intent', intent: i } satisfies GuestMsg)
 				return undefined
 			}
-			const next = { ...cur, history: [...cur.history.slice(-80), r.state!] }
+			let tutorial = cur.tutorial
+			if (tutorial && !tutorial.drill) {
+				// whatever the coach was explaining has now been seen
+				const seen = new Set(tutorial.seen)
+				const step = coachFor(st, 0, seen)
+				if (step && st.pending.kind !== 'over' && st.pending.player === 0) seen.add(step.key)
+				const note = tutorial.note ?? (tutorial.deck ? comboNote(tutorial.deck, r.state!, 0, seen) : null)
+				tutorial = { ...tutorial, seen: [...seen], note }
+			}
+			const next = { ...cur, history: [...cur.history.slice(-80), r.state!], tutorial }
 			sessionRef.current = next
 			setSession(next)
 			return undefined
@@ -172,6 +206,10 @@ export default function App() {
 		if (!state || !session?.bot) return
 		const who = actor(state)
 		if (who !== 1) return
+		const tut = session.tutorial
+		if (tut && tut.intro < pagesFor(tut).length) return
+		// drills are one turn: the rival only reacts, it never takes a turn
+		if (tut?.drill && state.active !== 0) return
 		const t = window.setTimeout(() => {
 			const cur = sessionRef.current
 			if (!cur) return
@@ -183,9 +221,9 @@ export default function App() {
 				sessionRef.current = n
 				setSession(n)
 			}
-		}, 420)
+		}, tut ? 900 : 420)
 		return () => window.clearTimeout(t)
-	}, [state, session?.bot])
+	}, [state, session?.bot, session?.tutorial?.intro])
 
 	// ───── online play ─────
 	const closeNet = () => {
@@ -322,6 +360,15 @@ export default function App() {
 			void openGuest(joinCode, r.names[0], deck)
 			return
 		}
+		if (r.lesson?.drill) {
+			const d = DRILLS.find((x) => x.id === r.lesson!.drill)!
+			const next: Session = { history: [d.build(pool.cards, r.seed)], bot: true, tutorial: { intro: 0, seen: [], note: null, deck: r.lesson.deck, drill: d.id } }
+			sessionRef.current = next
+			setSession(next)
+			setViewer(0)
+			setHandoff(null)
+			return
+		}
 		const g = buildGame(
 			pool.cards,
 			[
@@ -331,7 +378,7 @@ export default function App() {
 			r.format,
 			r.seed,
 		)
-		const next: Session = { history: [g], bot: r.mode === 'bot' }
+		const next: Session = { history: [g], bot: r.mode === 'bot', tutorial: r.tutorial ? { intro: 0, seen: [], note: null, ...(r.lesson ? { deck: r.lesson.deck } : {}) } : undefined }
 		sessionRef.current = next
 		setSession(next)
 		setViewer(0)
@@ -347,6 +394,19 @@ export default function App() {
 		sessionRef.current = next
 		setSession(next)
 	}
+
+	const restartDrill = (id: string) => {
+		const d = DRILLS.find((x) => x.id === id)!
+		if (!pool) return
+		const next: Session = { history: [d.build(pool.cards, (Date.now() >>> 0) ^ 0x5bd1)], bot: true, tutorial: { intro: 1, seen: [], note: null, deck: d.deck, drill: d.id } }
+		sessionRef.current = next
+		setSession(next)
+	}
+	const tut = session?.tutorial
+	const drill = tut?.drill ? DRILLS.find((d) => d.id === tut.drill) : undefined
+	const coachStep = tut && state ? (drill ? drillCoach(drill, state, session!.history[0]) : coachFor(state, 0, new Set(tut.seen))) : null
+	const introDone = tut ? tut.intro >= pagesFor(tut).length : true
+	const hint = tut && introDone && !tut.note ? (coachStep?.hint ?? undefined) : tut?.note && introDone ? tut.note.hint : undefined
 
 	const saved = !session && !lobby ? loadSave() : null
 	let body
@@ -369,6 +429,7 @@ export default function App() {
 				loading={loading}
 				onReload={() => reload(true)}
 				onStart={start}
+				initialLessons={lessonsOpen}
 				joinCode={joinCode}
 				resume={
 					saved
@@ -407,10 +468,27 @@ export default function App() {
 						sessionRef.current = null
 						setSession(null)
 						setJoinCode(null)
+						setLessonsOpen(false)
 					}}
 					layout={pocket ? 'pocket' : 'console'}
 					layoutChoice={layoutChoice}
 					onLayout={chooseLayout}
+					hint={hint}
+					coach={
+						tut ? (
+							<CoachPanel
+								session={session}
+								step={coachStep}
+								setSession={(n) => ((sessionRef.current = n), setSession(n))}
+								onDrill={restartDrill}
+								onLessons={() => {
+									sessionRef.current = null
+									setSession(null)
+									setLessonsOpen(true)
+								}}
+							/>
+						) : undefined
+					}
 					side={session.online ? <NetPanel net={net} code={session.online.code} host={session.online.role === 'host'} error={netError} onDismiss={() => setNetError(null)} /> : undefined}
 				/>
 				{handoff !== null && !session.bot && state.pending.kind !== 'over' && (
@@ -431,6 +509,72 @@ export default function App() {
 		<div className="viewport">
 			<div className="stage" style={{ width: W, height: H, transform: `scale(${scale})`, left: (window.innerWidth - W * scale) / 2, top: (window.innerHeight - H * scale) / 2 }}>
 				{body}
+			</div>
+		</div>
+	)
+}
+
+function CoachPanel({ session, step, setSession, onDrill, onLessons }: { session: Session; step: CoachStep | null; setSession: (s: Session) => void; onDrill: (id: string) => void; onLessons: () => void }) {
+	const t = session.tutorial!
+	const pages = pagesFor(t)
+	const update = (patch: Partial<Tutorial>) => setSession({ ...session, tutorial: { ...t, ...patch } })
+	let title: string
+	let body: string
+	let button: { label: string; onClick: () => void } | null = null
+	const extra: { label: string; onClick: () => void }[] = []
+	const drill = t.drill ? DRILLS.find((d) => d.id === t.drill) : undefined
+	const st = session.history[session.history.length - 1]
+	const tag = drill ? `COMBO DRILL · ${deckName(drill.deck)}` : t.deck ? `DECK LESSON · ${deckName(t.deck)}` : 'TUTORIAL'
+	if (t.intro < pages.length) {
+		title = pages[t.intro].title
+		body = pages[t.intro].body
+		button = { label: t.intro === pages.length - 1 ? (drill ? 'Start the drill' : 'Start playing') : 'Next', onClick: () => update({ intro: t.intro + 1 }) }
+		if (t.intro > 0) extra.push({ label: 'Back', onClick: () => update({ intro: t.intro - 1 }) })
+	} else if (drill && drill.success(st, session.history[0])) {
+		const list = drillsFor(drill.deck)
+		const others = DRILLS.filter((d) => d.id !== drill.id)
+		const next = list[list.indexOf(drill) + 1] ?? others[(DRILLS.indexOf(drill) + 1) % DRILLS.length]
+		title = 'Drill complete ✓'
+		body = drill.lesson
+		button = next ? { label: `Next: ${next.title}`, onClick: () => onDrill(next.id) } : { label: 'Back to the lessons', onClick: onLessons }
+		extra.push({ label: 'Do it again', onClick: () => onDrill(drill.id) }, { label: 'All lessons', onClick: onLessons })
+	} else if (drill && (st.active !== 0 || st.pending.kind === 'over' || !step)) {
+		title = 'Not quite'
+		body = `The goal was: ${drill.goal} Try again — follow the glowing hints, or try your own way.`
+		button = { label: 'Try again', onClick: () => onDrill(drill.id) }
+		extra.push({ label: 'All lessons', onClick: onLessons })
+	} else if (t.note) {
+		title = t.note.title
+		body = t.note.body
+		button = { label: 'Got it', onClick: () => update({ note: null, seen: [...t.seen, t.note!.key] }) }
+	} else if (step) {
+		title = step.title
+		body = step.body
+	} else return null
+	return (
+		<div className="coach">
+			<div className="coach-tag">
+				<span>
+					{tag}
+					{t.intro < pages.length && pages.length > 1 ? ` · ${t.intro + 1}/${pages.length}` : ''}
+				</span>
+				<button className="mini" onClick={() => setSession({ ...session, tutorial: undefined })}>
+					Turn off
+				</button>
+			</div>
+			<div className="coach-title">{title}</div>
+			<div className="coach-body">{body}</div>
+			<div className="coach-btns">
+				{button && (
+					<button className="primary" onClick={button.onClick}>
+						{button.label}
+					</button>
+				)}
+				{extra.map((b) => (
+					<button key={b.label} onClick={b.onClick}>
+						{b.label}
+					</button>
+				))}
 			</div>
 		</div>
 	)

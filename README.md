@@ -17,11 +17,24 @@ standing; card text and images are loaded from [Scryfall](https://scryfall.com) 
 - Runs on computers, iPads (the table scaled to fit) and phones (a touch layout). Switch layouts in the menu.
   Every game saves automatically, and you can undo moves when playing locally.
 
+## Learning to play
+
+- **Tutorial: practice game** — a real game against the computer with a coach panel that explains each
+  step (mulligans, lands and mana, casting, the stack, attacking, blocking, doing cards by hand) and makes
+  the suggested card or button glow.
+- **Deck lessons & combos** — for each deck: a guide to its game plan, then a coached game where the coach
+  points out combos as you draw them, plus combo drills: set positions with a goal ("win this turn"),
+  coached step by step, with a debrief when you solve them.
+
+Hover over any card to enlarge it (tap on touch screens). Each side of the table shows its library,
+graveyard, exile and command zone as piles; click a pile to look through it.
+
 ## What's automatic
 
 Turn structure, priority and the stack, mana and automatic land tapping (double-click a land to tap it by
 hand), casting with commander tax, the command zone, combat (flying, reach, trample, first/double strike,
-deathtouch, lifelink, vigilance, menace, haste…), state-based actions, the legend rule, equipment and
+deathtouch, lifelink, vigilance, menace, haste…), Station for Spacecraft, Seek out and other
+"whenever you draw your second card" / "whenever you attack" abilities, state-based actions, the legend rule, equipment and
 anthems, and the most common card wordings ("Destroy target creature.", "Draw two cards.", "Create a
 Treasure token.", land searches, scry…).
 

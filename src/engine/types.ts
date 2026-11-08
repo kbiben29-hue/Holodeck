@@ -131,6 +131,8 @@ export interface PlayerState {
 	commanderDamage: Record<string, number>
 	mulligans: number
 	kept: boolean
+	/** Cards drawn this turn (for "whenever you draw your second card each turn"). */
+	drawsThisTurn?: number
 	lost?: string
 	/** Card ids of this player's commanders. */
 	commanders: string[]

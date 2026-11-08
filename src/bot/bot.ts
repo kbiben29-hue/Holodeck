@@ -61,6 +61,15 @@ export function botIntents(s: GameState, me: number): Intent[] {
 		if (p.controller !== me || p.attachedTo !== undefined) continue
 		for (const a of rulesOf(s, p).activated) if (a.equip && !abilityProblem(s, me, p, a) && s.battlefield.some((c) => c.controller === me && isCreature(s, c))) out.push({ type: 'activate', player: me, iid: p.iid, ability: a.index })
 	}
+	// station Spacecraft after combat with creatures that are done for the turn
+	if (s.step === 'main2' && !s.stack.length)
+		for (const p of s.battlefield) {
+			if (p.controller !== me) continue
+			const r = rulesOf(s, p)
+			const a = r.activated.find((x) => x.station)
+			if (!a || (r.stationCreatureAt !== undefined && (p.counters.charge ?? 0) >= r.stationCreatureAt + 4)) continue
+			if (!abilityProblem(s, me, p, a)) out.push({ type: 'activate', player: me, iid: p.iid, ability: a.index })
+		}
 	// simple auto abilities on our own stuff (draw a card, make tokens…), not every turn-wasting one
 	for (const p of s.battlefield) {
 		if (p.controller !== me) continue

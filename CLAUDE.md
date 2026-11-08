@@ -28,6 +28,11 @@ npm run build
 - `src/bot/bot.ts` — greedy "Ensign" bot. `src/data/decks.ts` — the four decklists (names only).
 - `src/data/scryfall.ts` — loads cards + tokens from Scryfall on the device (prefers Star Trek sets), caches
   in localStorage. Card data is never committed or bundled.
+- `src/engine/scenario.ts` — build a position directly (drills, tests). `startrek.fixture.ts` — test stand-ins.
+- `src/ui/coach.ts` — tutorial coach (`INTRO` pages, `coachFor` explains the step and turns the bot's
+  suggested move into a `Hint`). `src/ui/lessons.ts` — per-deck `PLANS`, `COMBOS` (alerts in coached games),
+  `DRILLS` (built with `scenario`; `lessons.test.ts` solves each one). Lesson text is our own wording.
+- `src/ui/sfx.ts` — synthesized sounds (Web Audio), mute in the top bar.
 - `src/ui/Board.tsx` — console (1600×1000 scaled) and pocket (phone) layouts; `src/App.tsx` — sessions,
   autosave, undo, bot loop, online host/guest. `src/config.ts` — repo/play URL.
 

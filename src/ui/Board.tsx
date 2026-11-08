@@ -1,9 +1,11 @@
-import { useEffect, useMemo, useRef, useState, type ReactNode } from 'react'
+import { useEffect, useMemo, useRef, useState, type MouseEvent, type ReactNode } from 'react'
 import { abilityProblem, canAttack, canBlock, canCast, canPlayLand, commanderTax, manaAbilitiesOf, spellCost, STEP_NAMES, tryApply } from '../engine/engine'
 import { costText } from '../engine/mana'
 import { cardName, def, findPerm, isCreature, keywords, opp, permName, pt, rulesOf } from '../engine/state'
 import type { CardDef, GameState, Intent, Mana, ManualOp, Obj, Perm, Step } from '../engine/types'
 import { CardBack, CardFaceView, Cost, Pip } from './Card'
+import type { Hint } from './coach'
+import { isMuted, setMuted, soundFor, sfx, unlockAudio } from './sfx'
 
 export type LayoutChoice = 'auto' | 'console' | 'pocket'
 
@@ -20,7 +22,13 @@ export interface BoardProps {
 	layoutChoice: LayoutChoice
 	onLayout: (c: LayoutChoice) => void
 	side?: ReactNode
+	/** Tutorial coach panel and the moves it suggests. */
+	coach?: ReactNode
+	hint?: Hint
 }
+
+/** Does a button label match one of the hinted labels? */
+const hintMatch = (h: Hint | undefined, label: string) => !!h?.buttons?.some((b) => b && label.toLowerCase().startsWith(b.toLowerCase()))
 
 type Sel = { iid: number } | null
 type ZoneView = { player: number; zone: 'graveyard' | 'exile' | 'library' | 'command' | 'peek' } | null
@@ -52,6 +60,43 @@ export function Board(props: BoardProps) {
 	const [tokens, setTokens] = useState(false)
 	const [sheet, setSheet] = useState(false)
 	const [autoEnd, setAutoEnd] = useState(false)
+	const [coachMin, setCoachMin] = useState(false)
+	const [muted, setMutedState] = useState(isMuted())
+	const boardRef = useRef<HTMLDivElement>(null)
+	const [zoom, setZoom] = useState<{ iid: number; x: number; y: number } | null>(null)
+	/** Hovering a card: show it in the viewer and enlarged beside the pointer (table layout). */
+	const peek = (iid: number, e?: MouseEvent<HTMLDivElement>) => {
+		setHover(iid)
+		const b = boardRef.current
+		if (!e || !b || layout !== 'console') return
+		const br = b.getBoundingClientRect()
+		const k = br.width / 1600 || 1
+		const r = e.currentTarget.getBoundingClientRect()
+		const cx = (r.left + r.width / 2 - br.left) / k
+		const cy = (r.top + r.height / 2 - br.top) / k
+		const x = Math.max(4, Math.min(1600 - 284, cx - 140))
+		const y = Math.max(4, Math.min(1000 - 394, cy - 195))
+		setZoom({ iid, x, y })
+	}
+	const unpeek = () => setZoom(null)
+	const H = props.hint
+	const hb = (label: string) => (hintMatch(H, label) ? 'hint' : '')
+	const hHand = new Set(H?.hand ?? [])
+	const hPerm = new Set(H?.perms ?? [])
+	// sounds for new log lines
+	const logLen = useRef(s.log.length)
+	useEffect(() => {
+		const fresh = s.log.slice(logLen.current)
+		logLen.current = s.log.length
+		const played = new Set<() => void>()
+		fresh.slice(-6).forEach((line, i) => {
+			const f = soundFor(line, s.players[me].name)
+			if (f && !played.has(f) && played.size < 3) {
+				played.add(f)
+				window.setTimeout(f, i * 90)
+			}
+		})
+	}, [s.log.length])
 	const pend = s.pending
 	const toastTimer = useRef<number | undefined>(undefined)
 
@@ -101,7 +146,17 @@ export function Board(props: BoardProps) {
 	const shownIid = hover ?? sel?.iid ?? null
 	const shown = shownIid !== null ? locateAny(s, shownIid) : null
 
+	const boardPick = (iid: number): string | null => {
+		if (pend.kind !== 'choose' || pend.player !== me) return null
+		const o = pend.question.options.find((x) => x.iid === iid && (x.id === `p:${iid}` || x.id === String(iid)))
+		return o ? o.id : null
+	}
 	const clickPerm = (p: Perm) => {
+		const pick = boardPick(p.iid)
+		if (pick && pend.kind === 'choose' && pend.question.max === 1) {
+			act({ type: 'choose', player: me, picks: [pick] })
+			return
+		}
 		if (attachFrom !== null) {
 			if (p.iid !== attachFrom) tool({ op: 'attach', iid: attachFrom, to: p.iid })
 			setAttachFrom(null)
@@ -166,7 +221,8 @@ export function Board(props: BoardProps) {
 						att || pendingAtt ? 'attacking' : '',
 						blk || pendingBlk ? 'blocking' : '',
 						candidate ? 'candidate' : '',
-						blockTarget ? 'target' : '',
+						blockTarget || boardPick(p.iid) ? 'target' : '',
+						hPerm.has(p.iid) ? 'hint' : '',
 						attachFrom !== null ? 'target' : '',
 						p.faceDown ? 'facedown' : '',
 					].join(' ')}
@@ -174,7 +230,7 @@ export function Board(props: BoardProps) {
 						e.stopPropagation()
 						clickPerm(p)
 					}}
-					onMouseEnter={() => setHover(p.iid)}
+					onMouseEnter={(e) => peek(p.iid, e)} onMouseLeave={unpeek}
 				>
 					<span className="dbl" onDoubleClick={() => dbl(p)} />
 					{p.sick && creature && p.controller === s.active && <span className="badge sick" title="Summoning sick">z</span>}
@@ -206,7 +262,7 @@ export function Board(props: BoardProps) {
 									e.stopPropagation()
 									clickPerm(q)
 								}}
-								onMouseEnter={() => setHover(q.iid)}
+								onMouseEnter={(e) => peek(q.iid, e)} onMouseLeave={unpeek}
 							>
 								{permName(s, q)}
 							</span>
@@ -247,6 +303,50 @@ export function Board(props: BoardProps) {
 		)
 	}
 
+	/** Library, graveyard, exile and command zone, like piles beside a playmat. */
+	const piles = (p: number) => {
+		const pl = s.players[p]
+		const topGy = pl.graveyard[pl.graveyard.length - 1]
+		const topEx = pl.exile[pl.exile.length - 1]
+		const isMe = p === me
+		return (
+			<div className="piles">
+				<div className="pile" title="Library" onClick={() => setZone({ player: p, zone: 'library' })}>
+					<span className="pile-label">Library</span>
+					<div className="pile-card">
+						{pl.library.length ? <CardBack /> : <div className="pile-empty" />}
+						{pl.library.length > 1 && <div className="pile-shadow" />}
+						<span className="pile-n">{pl.library.length}</span>
+					</div>
+				</div>
+				<div className="pile" title="Graveyard — click to see it" onClick={() => setZone({ player: p, zone: 'graveyard' })} onMouseEnter={(e) => topGy && peek(topGy.iid, e)} onMouseLeave={unpeek}>
+					<span className="pile-label">Graveyard</span>
+					<div className="pile-card">
+						{topGy ? <CardFaceView def={def(s, topGy.card)} /> : <div className="pile-empty" />}
+						<span className="pile-n">{pl.graveyard.length}</span>
+					</div>
+				</div>
+				<div className="pile" title="Exile — click to see it" onClick={() => setZone({ player: p, zone: 'exile' })} onMouseEnter={(e) => topEx && peek(topEx.iid, e)} onMouseLeave={unpeek}>
+					<span className="pile-label">Exile</span>
+					<div className="pile-card">
+						{topEx ? <CardFaceView def={def(s, topEx.card)} /> : <div className="pile-empty" />}
+						<span className="pile-n">{pl.exile.length}</span>
+					</div>
+				</div>
+				<div className="pile cmdpile" title="Command zone">
+					<span className="pile-label">Command{pl.command.some((o) => pl.commanderCasts[o.card]) ? ` +${commanderTax(s, p, pl.command[0]?.card ?? '')}` : ''}</span>
+					<div className="pile-card">
+						{pl.command.length ? (
+							pl.command.map((o) => <CardFaceView key={o.iid} def={def(s, o.card)} className={`${sel?.iid === o.iid ? 'sel' : ''} ${isMe && playable(s, me, o) ? 'playable' : ''} ${hHand.has(o.iid) ? 'hint' : ''}`} onClick={(e) => (e.stopPropagation(), clickCard(o))} onMouseEnter={(e) => peek(o.iid, e)} onMouseLeave={unpeek} />)
+						) : (
+							<div className="pile-empty" />
+						)}
+					</div>
+				</div>
+			</div>
+		)
+	}
+
 	const hand = s.players[me].hand
 	const handView = (size: 'm' | 's') => (
 		<div className={`hand ${size}`}>
@@ -257,10 +357,10 @@ export function Board(props: BoardProps) {
 					<CardFaceView
 						key={o.iid}
 						def={def(s, o.card)}
-						className={`${sel?.iid === o.iid ? 'sel' : ''} ${playable(s, me, o) ? 'playable' : ''}`}
+						className={`${sel?.iid === o.iid ? 'sel' : ''} ${playable(s, me, o) ? 'playable' : ''} ${hHand.has(o.iid) ? 'hint' : ''}`}
 						style={layout === 'console' ? { zIndex: i } : undefined}
 						onClick={() => clickCard(o)}
-						onMouseEnter={() => setHover(o.iid)}
+						onMouseEnter={(e) => peek(o.iid, e)} onMouseLeave={unpeek}
 					/>
 				),
 			)}
@@ -295,24 +395,32 @@ export function Board(props: BoardProps) {
 					</span>
 				))}
 				<span className="zones">
-					<span className="zone" title="Hand">
+					<span className="zone" title="Cards in hand">
 						✋ {pl.hand.length}
 					</span>
-					<button className="zone" title="Library" onClick={() => setZone({ player: p, zone: 'library' })}>
-						📚 {pl.library.length}
-					</button>
-					<button className="zone" title="Graveyard" onClick={() => setZone({ player: p, zone: 'graveyard' })}>
-						⚰ {pl.graveyard.length}
-					</button>
-					<button className="zone" title="Exile" onClick={() => setZone({ player: p, zone: 'exile' })}>
-						⊘ {pl.exile.length}
-					</button>
+					{layout === 'pocket' && (
+						<>
+							<button className="zone" title="Library" onClick={() => setZone({ player: p, zone: 'library' })}>
+								📚 {pl.library.length}
+							</button>
+							<button className="zone" title="Graveyard" onClick={() => setZone({ player: p, zone: 'graveyard' })}>
+								⚰ {pl.graveyard.length}
+							</button>
+							{pl.exile.length > 0 && (
+								<button className="zone" title="Exile" onClick={() => setZone({ player: p, zone: 'exile' })}>
+									⊘ {pl.exile.length}
+								</button>
+							)}
+						</>
+					)}
 				</span>
-				<span className="command">
-					{pl.command.map((o) => (
-						<CardFaceView key={o.iid} def={def(s, o.card)} className={`cmdcard ${sel?.iid === o.iid ? 'sel' : ''} ${isMe && playable(s, me, o) ? 'playable' : ''}`} onClick={() => clickCard(o)} onMouseEnter={() => setHover(o.iid)} title={`Command zone${pl.commanderCasts[o.card] ? ` — tax {${commanderTax(s, p, o.card)}}` : ''}`} />
-					))}
-				</span>
+				{layout === 'pocket' && (
+					<span className="command">
+						{pl.command.map((o) => (
+							<CardFaceView key={o.iid} def={def(s, o.card)} className={`cmdcard ${sel?.iid === o.iid ? 'sel' : ''} ${isMe && playable(s, me, o) ? 'playable' : ''} ${hHand.has(o.iid) ? 'hint' : ''}`} onClick={() => clickCard(o)} />
+						))}
+					</span>
+				)}
 				{poolTotal > 0 && (
 					<span className="pool" title="Mana pool">
 						{MANA.filter((m) => pl.pool[m] > 0).map((m) => (
@@ -333,7 +441,7 @@ export function Board(props: BoardProps) {
 						.slice()
 						.reverse()
 						.map((it, i) => (
-							<div key={it.sid} className={`stack-item ${i === 0 ? 'top' : ''} ${it.controller === me ? 'mine' : 'theirs'}`} onMouseEnter={() => setHover(it.obj?.iid ?? it.iid)} title={it.text}>
+							<div key={it.sid} className={`stack-item ${i === 0 ? 'top' : ''} ${it.controller === me ? 'mine' : 'theirs'}`} onMouseEnter={(e) => peek(it.obj?.iid ?? it.iid, e)} onMouseLeave={unpeek} title={it.text}>
 								<CardFaceView def={def(s, it.card)} />
 								<span className="si-text">
 									<b>{it.kind === 'spell' ? cardName(s, it.card) : `${cardName(s, it.card)} — ${it.kind === 'trigger' ? 'trigger' : 'ability'}`}</b>
@@ -366,7 +474,7 @@ export function Board(props: BoardProps) {
 					<button onClick={() => setAttachFrom(null)}>Cancel</button>
 				) : (
 					prompt.buttons.map((b) => (
-						<button key={b.label} className={b.primary ? 'primary' : ''} onClick={b.onClick}>
+						<button key={b.label} className={`${b.primary ? 'primary' : ''} ${hb(b.label)}`} onClick={b.onClick}>
 							{b.label}
 						</button>
 					))
@@ -375,7 +483,24 @@ export function Board(props: BoardProps) {
 		</div>
 	)
 
-	const actions = selected ? <ActionPanel s={s} me={me} loc={selected} act={act} tool={tool} setAttachFrom={setAttachFrom} close={() => (setSel(null), setSheet(false))} /> : null
+	const actions = selected ? <ActionPanel
+				s={s}
+				me={me}
+				loc={selected}
+				act={(i) => {
+					const ok = act(i)
+					if (ok && layout === 'pocket') setSheet(false)
+					return ok
+				}}
+				tool={(m) => {
+					const ok = tool(m)
+					if (ok && layout === 'pocket' && m.op === 'move') setSheet(false)
+					return ok
+				}}
+				setAttachFrom={(n) => (setAttachFrom(n), setSheet(false))}
+				close={() => (setSel(null), setSheet(false))}
+				hb={hb}
+			/> : null
 
 	const viewerPanel = (
 		<div className="viewer">
@@ -394,9 +519,9 @@ export function Board(props: BoardProps) {
 
 	const modals = (
 		<>
-			{pend.kind === 'mulligan' && pend.player === me && !props.hideHand && <MulliganModal s={s} me={me} act={act} />}
+			{pend.kind === 'mulligan' && pend.player === me && !props.hideHand && <MulliganModal s={s} me={me} act={act} hb={hb} />}
 			{pend.kind === 'bottom' && pend.player === me && !props.hideHand && <BottomModal s={s} me={me} count={pend.count} act={act} />}
-			{pend.kind === 'choose' && pend.player === me && !props.hideHand && <ChooseModal s={s} me={me} act={act} onHover={setHover} />}
+			{pend.kind === 'choose' && pend.player === me && !props.hideHand && <ChooseModal s={s} me={me} act={act} onHover={setHover} hb={hb} hint={H} />}
 			{zone && <ZoneModal s={s} me={me} view={zone} close={() => (zone.zone === 'peek' && tool({ op: 'peek', player: me, count: 0 }), setZone(null))} tool={tool} act={act} />}
 			{s.players[me].peek ? <ZoneModal s={s} me={me} view={{ player: me, zone: 'peek' }} close={() => tool({ op: 'peek', player: me, count: 0 })} tool={tool} act={act} /> : null}
 			{tokens && <TokenModal s={s} me={me} tool={tool} close={() => setTokens(false)} />}
@@ -410,7 +535,7 @@ export function Board(props: BoardProps) {
 					openZone={(z) => (setMenu(false), setZone(z))}
 				/>
 			)}
-			{pend.kind === 'over' && <OverModal s={s} onMenu={props.onMenu} />}
+			{pend.kind === 'over' && !props.coach && <OverModal s={s} me={me} onMenu={props.onMenu} />}
 			{toast && (
 				<div className="toast" onClick={() => setToast(null)}>
 					{toast}
@@ -421,7 +546,20 @@ export function Board(props: BoardProps) {
 
 	if (layout === 'pocket')
 		return (
-			<div className="pocket" onClick={() => setHover(null)}>
+			<div className="pocket" onClick={() => setHover(null)} onPointerDown={unlockAudio}>
+				{props.coach &&
+					(coachMin ? (
+						<button className="p-coach-pill" onClick={() => setCoachMin(false)}>
+							Coach ▸
+						</button>
+					) : (
+						<div className="p-coach">
+							<button className="mini p-coach-min" onClick={() => setCoachMin(true)}>
+								hide
+							</button>
+							{props.coach}
+						</div>
+					))}
 				<div className="p-top">
 					{playerBar(them)}
 					<button className="menu-btn" onClick={() => setMenu(true)}>
@@ -440,8 +578,11 @@ export function Board(props: BoardProps) {
 					{handView('s')}
 				</div>
 				{sheet && selected && (
-					<div className="sheet-bg" onClick={() => setSheet(false)}>
+					<div className="sheet-float">
 						<div className="sheet" onClick={(e) => e.stopPropagation()}>
+							<button className="mini sheet-x" onClick={() => setSheet(false)}>
+								✕
+							</button>
 							<CardFaceView def={def(s, selected.obj.card)} back={(selected.obj as Perm).flipped} className="big" />
 							<CardInfo s={s} loc={selected} />
 							{actions}
@@ -453,11 +594,19 @@ export function Board(props: BoardProps) {
 		)
 
 	return (
-		<div className="board" onMouseLeave={() => setHover(null)}>
+		<div className="board" ref={boardRef} onMouseLeave={() => (setHover(null), setZoom(null))} onPointerDown={unlockAudio}>
+			{zoom && locateAny(s, zoom.iid) && !(props.hideHand && s.players[me].hand.some((o) => o.iid === zoom.iid)) && (
+				<div className="zoom" style={{ left: zoom.x, top: zoom.y }}>
+					<CardFaceView def={def(s, locateAny(s, zoom.iid)!.obj.card)} back={(locateAny(s, zoom.iid)!.obj as Perm).flipped} className="big" />
+				</div>
+			)}
 			<div className="main">
 				<div className="side them">
 					{playerBar(them)}
-					<div className="field">{field(them, 'm')}</div>
+					<div className="fieldrow">
+						<div className="field">{field(them, 'm')}</div>
+						{piles(them)}
+					</div>
 				</div>
 				<div className="center">
 					{phaseBar}
@@ -465,7 +614,10 @@ export function Board(props: BoardProps) {
 					{promptBar}
 				</div>
 				<div className="side me">
-					<div className="field">{field(me, 'm')}</div>
+					<div className="fieldrow">
+						<div className="field">{field(me, 'm')}</div>
+						{piles(me)}
+					</div>
 					{playerBar(me)}
 				</div>
 				{handView('m')}
@@ -475,8 +627,12 @@ export function Board(props: BoardProps) {
 					<button onClick={() => setMenu(true)}>☰ Menu</button>
 					<button onClick={() => setTokens(true)}>+ Token</button>
 					{props.onUndo && <button onClick={props.onUndo}>↶ Undo</button>}
+					<button title={muted ? 'Sound off' : 'Sound on'} onClick={() => (setMuted(!muted), setMutedState(!muted))}>
+						{muted ? '🔇' : '🔊'}
+					</button>
 				</div>
 				{props.side}
+				{props.coach}
 				{viewerPanel}
 				<div className="actions-wrap">{actions}</div>
 				{logView}
@@ -624,15 +780,15 @@ function CardInfo({ s, loc }: { s: GameState; loc: Loc }) {
 	)
 }
 
-function ActionPanel({ s, me, loc, act, tool, setAttachFrom, close }: { s: GameState; me: number; loc: Loc; act: (i: Intent) => boolean; tool: (m: ManualOp) => boolean; setAttachFrom: (n: number | null) => void; close: () => void }) {
+function ActionPanel({ s, me, loc, act, tool, setAttachFrom, close, hb }: { s: GameState; me: number; loc: Loc; act: (i: Intent) => boolean; tool: (m: ManualOp) => boolean; setAttachFrom: (n: number | null) => void; close: () => void; hb: (label: string) => string }) {
 	const [more, setMore] = useState(false)
 	const [ctrKind, setCtrKind] = useState('+1/+1')
 	const o = loc.obj
 	const d = def(s, o.card)
 	const btns: ReactNode[] = []
-	const b = (label: ReactNode, fn: () => void, opts: { primary?: boolean; key?: string } = {}) =>
+	const b = (label: ReactNode, fn: () => void, opts: { primary?: boolean; key?: string; text?: string } = {}) =>
 		btns.push(
-			<button key={opts.key ?? String(label)} className={opts.primary ? 'primary' : ''} onClick={fn}>
+			<button key={opts.key ?? String(label)} className={`${opts.primary ? 'primary' : ''} ${hb(opts.text ?? (typeof label === 'string' ? label : ''))}`} onClick={fn}>
 				{label}
 			</button>,
 		)
@@ -648,7 +804,7 @@ function ActionPanel({ s, me, loc, act, tool, setAttachFrom, close }: { s: GameS
 					Cast <Cost cost={costText(cost)} small />
 				</>,
 				() => act({ type: 'cast', player: me, iid: o.iid }),
-				{ primary: true, key: 'cast' },
+				{ primary: true, key: 'cast', text: 'Cast' },
 			)
 		}
 		if (d.back) {
@@ -669,7 +825,7 @@ function ActionPanel({ s, me, loc, act, tool, setAttachFrom, close }: { s: GameS
 					Cast commander <Cost cost={costText(cost)} small />
 				</>,
 				() => act({ type: 'cast', player: me, iid: o.iid }),
-				{ primary: true, key: 'cast' },
+				{ primary: true, key: 'cast', text: 'Cast commander' },
 			)
 		}
 		move('battlefield', 'Put onto battlefield')
@@ -691,7 +847,7 @@ function ActionPanel({ s, me, loc, act, tool, setAttachFrom, close }: { s: GameS
 			for (const a of rulesOf(s, p).activated) {
 				const why = abilityProblem(s, me, p, a)
 				btns.push(
-					<button key={'ab' + a.index} className={`ability ${why ? 'dim' : 'primary'}`} title={why ?? (a.compiled ? '' : 'Done by hand after it resolves')} onClick={() => act({ type: 'activate', player: me, iid: p.iid, ability: a.index })}>
+					<button key={'ab' + a.index} className={`ability ${why ? 'dim' : 'primary'} ${hb(a.equip ? 'Equip' : a.text)}`} title={why ?? (a.compiled ? '' : 'Done by hand after it resolves')} onClick={() => act({ type: 'activate', player: me, iid: p.iid, ability: a.index })}>
 						{a.equip ? `Equip ${a.cost.mana}` : a.text.length > 70 ? a.text.slice(0, 68) + '…' : a.text}
 					</button>,
 				)
@@ -806,7 +962,7 @@ function Modal({ title, children, onClose, wide }: { title: ReactNode; children:
 	)
 }
 
-function MulliganModal({ s, me, act }: { s: GameState; me: number; act: (i: Intent) => boolean }) {
+function MulliganModal({ s, me, act, hb }: { s: GameState; me: number; act: (i: Intent) => boolean; hb: (l: string) => string }) {
 	const pl = s.players[me]
 	const bottom = pl.mulligans + 1 - (s.format.freeMulligan ? 1 : 0)
 	return (
@@ -817,10 +973,10 @@ function MulliganModal({ s, me, act }: { s: GameState; me: number; act: (i: Inte
 				))}
 			</div>
 			<div className="modal-btns">
-				<button className="primary" onClick={() => act({ type: 'keep', player: me })}>
+				<button className={`primary ${hb('Keep')}`} onClick={() => act({ type: 'keep', player: me })}>
 					Keep{pl.mulligans - (s.format.freeMulligan ? 1 : 0) > 0 ? ` (bottom ${pl.mulligans - (s.format.freeMulligan ? 1 : 0)})` : ''}
 				</button>
-				<button onClick={() => act({ type: 'mulligan', player: me })}>Mulligan{bottom > 0 ? ` (then bottom ${bottom})` : ' (free)'}</button>
+				<button className={hb('Mulligan')} onClick={() => act({ type: 'mulligan', player: me })}>Mulligan{bottom > 0 ? ` (then bottom ${bottom})` : ' (free)'}</button>
 			</div>
 		</Modal>
 	)
@@ -844,21 +1000,27 @@ function BottomModal({ s, me, count, act }: { s: GameState; me: number; count: n
 	)
 }
 
-function ChooseModal({ s, me, act, onHover }: { s: GameState; me: number; act: (i: Intent) => boolean; onHover: (n: number | null) => void }) {
+function ChooseModal({ s, me, act, onHover, hb, hint }: { s: GameState; me: number; act: (i: Intent) => boolean; onHover: (n: number | null) => void; hb: (l: string) => string; hint?: Hint }) {
 	const p = s.pending
 	const [pick, setPick] = useState<string[]>([])
 	const [hidden, setHidden] = useState(false)
 	const q = p.kind === 'choose' ? p.question : null
-	useEffect(() => setPick([]), [q?.key, p.kind === 'choose' ? p.task : 0])
+	useEffect(() => {
+		setPick([])
+		setHidden(false)
+	}, [q?.key, p.kind === 'choose' ? p.task : 0])
 	if (!q) return null
+	const single = q.max === 1 && q.min === 1
 	const toggle = (id: string) => {
-		if (q.max === 1 && q.min === 1) {
+		if (single) {
 			act({ type: 'choose', player: me, picks: [id] })
 			return
 		}
 		setPick(pick.includes(id) ? pick.filter((x) => x !== id) : pick.length < q.max ? [...pick, id] : pick)
 	}
+	const hinted = (id: string) => (hint?.options?.includes(id) ? 'hint' : '')
 	const asCards = q.options.some((o) => o.card) && (q.cards || q.options.every((o) => o.card))
+	const onBoard = q.options.some((o) => o.iid !== undefined && findPerm(s, o.iid))
 	if (hidden)
 		return (
 			<button className="peek-back" onClick={() => setHidden(false)}>
@@ -866,13 +1028,15 @@ function ChooseModal({ s, me, act, onHover }: { s: GameState; me: number; act: (
 			</button>
 		)
 	return (
-		<Modal title={q.prompt.split('\n')[0]} wide={asCards}>
+		<div className={`qpanel ${asCards ? 'wide' : ''}`}>
+			<div className="q-title">{q.prompt.split('\n')[0]}</div>
 			{q.prompt.includes('\n') && <div className="q-sub">{q.prompt.split('\n').slice(1).join('\n')}</div>}
+			{onBoard && single && <div className="q-sub">Click a glowing card on the table, or pick from the list.</div>}
 			{asCards ? (
 				<div className="cardgrid">
 					{q.options.map((o) => (
 						<div key={o.id} className="opt-card">
-							{o.card ? <CardFaceView def={def(s, o.card)} className={pick.includes(o.id) ? 'picked' : ''} onClick={() => toggle(o.id)} onMouseEnter={() => o.iid && onHover(o.iid)} /> : <button onClick={() => toggle(o.id)}>{o.label}</button>}
+							{o.card ? <CardFaceView def={def(s, o.card)} className={`${pick.includes(o.id) ? 'picked' : ''} ${hinted(o.id)}`} onClick={() => toggle(o.id)} onMouseEnter={() => o.iid && onHover(o.iid)} /> : <button className={hinted(o.id) || hb(o.label)} onClick={() => toggle(o.id)}>{o.label}</button>}
 							{q.ordered && pick.includes(o.id) && <span className="order">{pick.indexOf(o.id) + 1}</span>}
 							<small>{o.label}</small>
 						</div>
@@ -881,15 +1045,15 @@ function ChooseModal({ s, me, act, onHover }: { s: GameState; me: number; act: (
 			) : (
 				<div className="optlist">
 					{q.options.map((o) => (
-						<button key={o.id} className={pick.includes(o.id) ? 'picked' : ''} onClick={() => toggle(o.id)} onMouseEnter={() => o.iid && onHover(o.iid)}>
+						<button key={o.id} className={`${pick.includes(o.id) ? 'picked' : ''} ${hinted(o.id) || hb(o.label)}`} onClick={() => toggle(o.id)} onMouseEnter={() => o.iid && onHover(o.iid)}>
 							{o.label}
 						</button>
 					))}
 				</div>
 			)}
 			<div className="modal-btns">
-				{!(q.max === 1 && q.min === 1) && (
-					<button className="primary" disabled={pick.length < q.min || pick.length > q.max} onClick={() => act({ type: 'choose', player: me, picks: pick })}>
+				{!single && (
+					<button className={`primary ${hb('Confirm')}`} disabled={pick.length < q.min || pick.length > q.max} onClick={() => act({ type: 'choose', player: me, picks: pick })}>
 						Confirm ({pick.length}
 						{q.max > 1 ? `/${q.max}` : ''})
 					</button>
@@ -897,7 +1061,7 @@ function ChooseModal({ s, me, act, onHover }: { s: GameState; me: number; act: (
 				<button onClick={() => setHidden(true)}>Look at the board</button>
 			</div>
 			{q.ordered && <div className="q-sub">Pick in order: the first card you pick ends up on top.</div>}
-		</Modal>
+		</div>
 	)
 }
 
@@ -1095,13 +1259,13 @@ function MenuModal(props: BoardProps & { me: number; tool: (m: ManualOp) => bool
 	)
 }
 
-function OverModal({ s, onMenu }: { s: GameState; onMenu: () => void }) {
+function OverModal({ s, me, onMenu }: { s: GameState; me: number; onMenu: () => void }) {
 	const p = s.pending
 	if (p.kind !== 'over') return null
 	return (
 		<Modal title="Game over">
 			<div className="over">
-				<h2>{p.winner === null ? 'Draw' : `${s.players[p.winner].name} wins`}</h2>
+				<h2>{p.winner === null ? 'Draw' : p.winner === me && !s.players[me].bot ? 'You win!' : `${s.players[p.winner].name} wins`}</h2>
 				<p>{s.players.filter((x) => x.lost).map((x) => `${x.name}: ${x.lost}`).join(' · ')}</p>
 				<button className="primary" onClick={onMenu}>
 					Back to menu

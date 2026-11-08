@@ -4,7 +4,7 @@
 import type { Ctx } from './effects'
 import { H, search } from './effects'
 import type { Compiled } from './rules'
-import { cardName, findPerm, log, pt, rulesOf } from './state'
+import { cardName, def, findPerm, isType, log, pt, rulesOf } from './state'
 import type { StackItem } from './types'
 
 export interface Named {
@@ -70,6 +70,31 @@ export const NAMED: Record<string, Named> = {
 				for (const id of picks) if (id !== bf) H().move(s, Number(id), 'hand')
 			}
 			H().shuffle(s, me)
+		},
+	},
+	Dispatch: {
+		spell: { targets: [creature], effects: [{ e: 'named', name: 'Dispatch' }] },
+		run(ctx, item, legal) {
+			const s = ctx.s
+			const p = legal[0] ? findPerm(s, item.targets[0].id) : undefined
+			if (!p) return
+			const artifacts = s.battlefield.filter((q) => q.controller === item.controller && isType(s, q, 'artifact')).length
+			if (artifacts >= 3) {
+				log(s, 'Metalcraft: three or more artifacts, so it is exiled.')
+				H().move(s, p.iid, 'exile')
+			} else p.tapped = true
+		},
+	},
+	'Deliver from Chaos': {
+		spell: { targets: [{ kind: 'perm', filter: { types: ['artifact', 'creature'], not: [] } }], effects: [{ e: 'named', name: 'Deliver from Chaos' }] },
+		run(ctx, item, legal) {
+			const s = ctx.s
+			const p = legal[0] ? findPerm(s, item.targets[0].id) : undefined
+			if (!p) return
+			const n = def(s, p.card).cmc
+			H().move(s, p.iid, 'exile')
+			const card = H().makeTokenDef(s, { e: 'token', n, name: 'Borg', power: 1, toughness: 1, types: 'Artifact Creature — Borg', colors: [], keywords: [], artifact: true }, 0)
+			H().createToken(s, item.controller, card, n)
 		},
 	},
 	Brainstorm: {

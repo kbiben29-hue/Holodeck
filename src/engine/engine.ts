@@ -23,6 +23,7 @@ import {
 	log,
 	matches,
 	newPerm,
+	reached,
 	opp,
 	permName,
 	pt,
@@ -134,6 +135,10 @@ function drawCards(s: GameState, p: number, n: number, quiet = false) {
 			break
 		}
 		pl.hand.push(c)
+		if (s.turn > 0) {
+			pl.drawsThisTurn = (pl.drawsThisTurn ?? 0) + 1
+			if (pl.drawsThisTurn === 2) for (const q of s.battlefield) if (q.controller === p) fire(s, q, 'secondDraw')
+		}
 	}
 	if (!quiet && n > 0) log(s, `${pl.name} draws ${n === 1 ? 'a card' : `${n} cards`}.`)
 }
@@ -173,8 +178,8 @@ function triggersOf(s: GameState, p: { card: string; flipped?: boolean }, ev: Tr
 		.filter((x) => x.t.event === ev)
 }
 
-function fire(s: GameState, src: { iid: number; card: string; flipped?: boolean; controller: number }, ev: TriggerEvent, about?: number) {
-	for (const { index } of triggersOf(s, src, ev)) queue(s).push({ iid: src.iid, card: src.card, flipped: src.flipped, controller: src.controller, index, about })
+function fire(s: GameState, src: { iid: number; card: string; flipped?: boolean; controller: number; counters?: Record<string, number> }, ev: TriggerEvent, about?: number) {
+	for (const { index } of triggersOf(s, src, ev).filter((x) => reached(src, x.t.threshold))) queue(s).push({ iid: src.iid, card: src.card, flipped: src.flipped, controller: src.controller, index, about })
 }
 
 function onEnter(s: GameState, p: Perm) {
@@ -528,6 +533,8 @@ export function canCast(s: GameState, p: number, iid: number, back = false, chec
 export function abilityProblem(s: GameState, p: number, perm: Perm, a: Activated): string | null {
 	if (!hasPriority(s, p)) return 'Wait until you have priority.'
 	if (perm.controller !== p) return 'You don’t control that.'
+	if (!reached(perm, a.threshold)) return `Needs ${a.threshold} charge counters.`
+	if (a.station && !s.battlefield.some((q) => q.controller === p && q.iid !== perm.iid && !q.tapped && isCreature(s, q))) return 'You need another untapped creature to station it.'
 	if ((a.sorcery || a.equip) && !sorceryTime(s, p)) return 'Only in your main phase when the stack is empty.'
 	if (a.cost.tap && perm.tapped) return 'It is tapped.'
 	if (a.cost.untap && !perm.tapped) return 'It is untapped.'
@@ -647,7 +654,7 @@ function doCast(ctx: Ctx) {
 	const it = detach(s, iid)!
 	if (f.zone === 'command') s.players[p].commanderCasts[card] = (s.players[p].commanderCasts[card] ?? 0) + 1
 	s.stack.push({ sid: s.nextId++, kind: 'spell', controller: p, card, iid, obj: it.obj, text: back && def(s, card).back ? def(s, card).back!.name : cardName(s, card), targets, x, fromCommand: f.zone === 'command', manual, ...(back ? { ability: -1 } : {}) })
-	log(s, `${s.players[p].name} casts ${cardName(s, card)}${x ? ` (X=${x})` : ''}${targets.length ? ` targeting ${targets.map((t) => targetName(s, t)).join(', ')}` : ''}.`)
+	log(s, `${s.players[p].name} casts ${cardName(s, card)}${f.zone === 'command' ? ' from the command zone' : ''}${x ? ` (X=${x})` : ''}${targets.length ? ` targeting ${targets.map((t) => targetName(s, t)).join(', ')}` : ''}.`)
 	for (const { index } of triggersOf(s, { card }, 'cast')) queue(s).push({ iid, card, controller: p, index })
 	afterStackAdd(s, p)
 }
@@ -684,6 +691,14 @@ function doActivate(ctx: Ctx) {
 		if (!t) throw new Illegal('There are no legal targets.')
 		targets = t
 	}
+	let x: number | undefined
+	if (a.station) {
+		const crew = s.battlefield.filter((q) => q.controller === p && q.iid !== iid && !q.tapped && isCreature(s, q))
+		const [pick] = ctx.ask(p, { key: 'st', prompt: `Station ${permName(s, perm)}: tap which creature? (its power becomes charge counters)`, options: crew.map((q) => ({ id: String(q.iid), label: `${permName(s, q)} (${pt(s, q)[0]})`, card: q.card, iid: q.iid, score: pt(s, q)[0] })), min: 1, max: 1, cards: true })
+		const c = findPerm(s, Number(pick))!
+		c.tapped = true
+		x = Math.max(0, pt(s, c)[0])
+	}
 	if (a.cost.discard) {
 		if (s.players[p].hand.length < a.cost.discard) throw new Illegal('You have no card to discard.')
 		discardFx(ctx, p, a.cost.discard, 'cd')
@@ -699,7 +714,7 @@ function doActivate(ctx: Ctx) {
 	perm.used = { ...(perm.used ?? {}), [a.index]: (perm.used?.[a.index] ?? 0) + 1 }
 	const card = perm.card
 	if (a.cost.sacrificeSelf) moveCard(s, iid, 'graveyard', { cause: 'sacrifice' })
-	s.stack.push({ sid: s.nextId++, kind: 'ability', controller: p, card, iid, text: a.text, ability: a.index, targets, manual: !a.compiled || !!a.cost.other })
+	s.stack.push({ sid: s.nextId++, kind: 'ability', controller: p, card, iid, text: a.station ? `Station: +${x} charge` : a.text, ability: a.index, targets, x, manual: !a.compiled || !!a.cost.other })
 	log(s, `${s.players[p].name} activates ${cardName(s, card)}${a.equip ? ' (equip)' : ''}${targets.length ? ` targeting ${targets.map((t) => targetName(s, t)).join(', ')}` : ''}.${a.cost.other ? ` (Pay by hand: ${a.cost.other}.)` : ''}`)
 	afterStackAdd(s, p)
 }
@@ -781,6 +796,14 @@ function doResolve(ctx: Ctx) {
 			if (eq && host && host.controller === me && isCreature(s, host)) {
 				eq.attachedTo = host.iid
 				log(s, `${permName(s, eq)} is attached to ${permName(s, host)}.`)
+			}
+			return
+		}
+		if (a?.station) {
+			const sc = findPerm(s, it.iid)
+			if (sc) {
+				sc.counters.charge = (sc.counters.charge ?? 0) + (it.x ?? 0)
+				log(s, `${permName(s, sc)} now has ${sc.counters.charge} charge counters.`)
 			}
 			return
 		}
@@ -916,6 +939,7 @@ function enterStep(s: GameState, step: Step) {
 			s.turn++
 			const pl = s.players[a]
 			pl.landsPlayed = 0
+			for (const x of s.players) x.drawsThisTurn = 0
 			for (const p of s.battlefield) {
 				if (p.controller === a) {
 					p.tapped = false
@@ -1244,6 +1268,7 @@ export function apply(s0: GameState, intent: Intent): GameState {
 				if (!hasKw(s, a, 'vigilance')) a.tapped = true
 				fire(s, a, 'attacks')
 			}
+			if (intent.attackers.length) for (const q of s.battlefield) if (q.controller === p) fire(s, q, 'youAttack')
 			if (intent.attackers.length) log(s, `${s.players[p].name} attacks with ${intent.attackers.map((iid) => permName(s, findPerm(s, iid)!)).join(', ')}.`)
 			else {
 				s.combat = null

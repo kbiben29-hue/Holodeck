@@ -5,9 +5,14 @@ import { slug, type CardPool } from '../data/scryfall'
 import { FORMATS } from '../engine/engine'
 import type { Format } from '../engine/types'
 import { Pip } from './Card'
+import { DRILLS, drillsFor, PLANS, rivalDeck, type DeckId } from './lessons'
 
 export interface SetupResult {
 	mode: 'bot' | 'local' | 'host' | 'guest'
+	/** Practice game with the tutorial coach. */
+	tutorial?: boolean
+	/** Deck lessons: coached game with a deck's plan, or one of its combo drills. */
+	lesson?: { deck: DeckId; drill?: string }
 	names: [string, string]
 	decks: [string, string]
 	leaders: ['commander' | 'alt', 'commander' | 'alt']
@@ -17,7 +22,8 @@ export interface SetupResult {
 
 const NAME_KEY = 'holodeck.name'
 
-export function Setup({ pool, loading, onReload, onStart, joinCode, resume }: { pool: CardPool | null; loading: { f: number; text: string; error?: string } | null; onReload: () => void; onStart: (r: SetupResult) => void; joinCode: string | null; resume?: { label: string; go: () => void } }) {
+export function Setup({ pool, loading, onReload, onStart, joinCode, resume, initialLessons }: { pool: CardPool | null; loading: { f: number; text: string; error?: string } | null; onReload: () => void; onStart: (r: SetupResult) => void; joinCode: string | null; resume?: { label: string; go: () => void }; initialLessons?: boolean }) {
+	const [lessons, setLessons] = useState(!!initialLessons)
 	const [mode, setMode] = useState<SetupResult['mode']>(joinCode ? 'guest' : 'bot')
 	const [names, setNames] = useState<[string, string]>(() => [localStorage.getItem(NAME_KEY) || 'Captain', 'Ensign Bot'])
 	const [decks, setDecks] = useState<[string, string]>(['federation', 'klingon'])
@@ -57,10 +63,58 @@ export function Setup({ pool, loading, onReload, onStart, joinCode, resume }: { 
 		</div>
 	)
 
-	const start = () => {
+	const start = (extra: Partial<SetupResult> = {}) => {
 		localStorage.setItem(NAME_KEY, names[0])
-		onStart({ mode, names: [names[0] || 'Player 1', mode === 'bot' ? 'Ensign (computer)' : names[1] || 'Player 2'], decks, leaders, format, seed: (Date.now() ^ Math.floor(Math.random() * 1e9)) >>> 0 })
+		onStart({ mode, names: [names[0] || 'Player 1', mode === 'bot' ? 'Ensign (computer)' : names[1] || 'Player 2'], decks, leaders, format, seed: (Date.now() ^ Math.floor(Math.random() * 1e9)) >>> 0, ...extra })
 	}
+	const practice = () => {
+		const d = decks[0] as DeckId
+		start({ mode: 'bot', tutorial: true, decks: [d, rivalDeck(d)], leaders: ['commander', 'commander'], format: 'duel', names: [names[0] || 'Captain', 'Ensign (computer)'] })
+	}
+	const lesson = (deck: DeckId, drill?: string) => start({ mode: 'bot', tutorial: true, lesson: { deck, drill }, decks: [deck, rivalDeck(deck)], leaders: ['commander', 'commander'], format: 'duel', names: [names[0] || 'Captain', 'Ensign (computer)'] })
+
+	if (lessons)
+		return (
+			<div className="setup">
+				<div className="lcars-head">
+					<span className="elbow" />
+					<h1>Lessons</h1>
+					<span className="sub">DECK LESSONS & COMBOS</span>
+				</div>
+				<p className="dim">Each deck has a guide to its game plan followed by a coached game against the computer (the coach points out combos as you draw them), and combo drills: set positions with a goal, coached step by step.</p>
+				<div className="lessons">
+					{DECKS.map((d) => {
+						const img = pool?.cards[slug(d.commander)]?.image
+						return (
+							<div key={d.id} className="lesson-deck">
+								{img ? <img src={img} alt={d.commander} /> : <div className="noimg">{d.commander}</div>}
+								<div className="lesson-body">
+									<h3>
+										{d.name}{' '}
+										{d.colors.split('').map((c) => (
+											<Pip key={c} m={c} />
+										))}
+									</h3>
+									<p className="dim small">{PLANS[d.id as DeckId][0].body}</p>
+									<button className="primary" disabled={!ready} onClick={() => lesson(d.id as DeckId)}>
+										Game plan + coached game
+									</button>
+									{drillsFor(d.id).map((dr) => (
+										<button key={dr.id} disabled={!ready} onClick={() => lesson(d.id as DeckId, dr.id)} title={dr.goal}>
+											Drill: {dr.title}
+										</button>
+									))}
+								</div>
+							</div>
+						)
+					})}
+				</div>
+				<div className="setup-buttons">
+					<button onClick={() => setLessons(false)}>Back</button>
+				</div>
+				<p className="dim small">{DRILLS.length} drills. New to Magic? Start with the Tutorial practice game on the main screen.</p>
+			</div>
+		)
 
 	return (
 		<div className="setup">
@@ -97,7 +151,7 @@ export function Setup({ pool, loading, onReload, onStart, joinCode, resume }: { 
 						<h3>Your deck</h3>
 						{deckPicker(0)}
 						<div className="setup-buttons">
-							<button className="primary big" disabled={!ready} onClick={start}>
+							<button className="primary big" disabled={!ready} onClick={() => start()}>
 								Join game
 							</button>
 							<button onClick={() => setMode('bot')}>Play something else</button>
@@ -144,11 +198,20 @@ export function Setup({ pool, loading, onReload, onStart, joinCode, resume }: { 
 							))}
 						</section>
 						<div className="setup-buttons">
-							<button className="primary big" disabled={!ready} onClick={start}>
+							<button className="primary big" disabled={!ready} onClick={() => start()}>
 								{mode === 'host' ? 'Create invite link' : 'Start game'}
 							</button>
 							{resume && <button onClick={resume.go}>{resume.label}</button>}
 						</div>
+						<section className="learn">
+							<span>Learn:</span>
+							<button disabled={!ready} onClick={practice} title="A real game against the computer with a coach explaining every step (uses Player 1’s deck)">
+								Tutorial: practice game
+							</button>
+							<button disabled={!ready} onClick={() => setLessons(true)} title="Each deck’s game plan, a coached game with combo alerts, and combo drills">
+								Deck lessons & combos
+							</button>
+						</section>
 						<p className="dim small">
 							Duel Commander is the usual 2-player way to play Commander: 20 life and no commander damage. Its ban list is not used, so the decks play as they come out of the box. Card images and text come from Scryfall. This is a fan project; it isn’t affiliated with Wizards of the Coast or Paramount.
 						</p>

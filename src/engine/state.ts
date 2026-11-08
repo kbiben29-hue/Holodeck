@@ -114,9 +114,19 @@ export function player(s: GameState, i: number): PlayerState {
 	return s.players[i]
 }
 
-export function isType(s: GameState, p: { card: string; flipped?: boolean }, t: string): boolean {
-	return rulesOf(s, p).types.includes(t)
+/** Card types, counting a stationed Spacecraft as an artifact creature. */
+export function typesOf(s: GameState, p: { card: string; flipped?: boolean; counters?: Record<string, number> }): string[] {
+	const r = rulesOf(s, p)
+	if (r.stationCreatureAt !== undefined && (p.counters?.charge ?? 0) >= r.stationCreatureAt && !r.types.includes('creature')) return [...r.types, 'creature']
+	return r.types
 }
+
+export function isType(s: GameState, p: { card: string; flipped?: boolean; counters?: Record<string, number> }, t: string): boolean {
+	return typesOf(s, p).includes(t)
+}
+
+/** Is a threshold ("N+ |" on a Spacecraft) met? */
+export const reached = (p: { counters?: Record<string, number> }, n: number | undefined) => n === undefined || (p.counters?.charge ?? 0) >= n
 
 export function colorsOf(s: GameState, card: string): Color[] {
 	return def(s, card).colors
@@ -129,8 +139,10 @@ export function mv(s: GameState, card: string): number {
 /** Does this permanent (or card) match a filter, from `viewer`'s point of view? */
 export function matches(s: GameState, f: Filter, o: { card: string; flipped?: boolean; iid?: number; token?: boolean }, viewer: number, controller: number, sourceIid?: number, perm?: Perm): boolean {
 	const r = rulesOf(s, o)
-	if (f.types.length && !f.types.some((t) => r.types.includes(t))) return false
-	if (f.not.some((t) => r.types.includes(t))) return false
+	const types = perm ? typesOf(s, perm) : r.types
+	if (f.types.length && !f.types.some((t) => types.includes(t))) return false
+	if (f.and?.length && !f.and.every((t) => types.includes(t))) return false
+	if (f.not.some((t) => types.includes(t))) return false
 	if (f.controller === 'you' && controller !== viewer) return false
 	if (f.controller === 'opp' && controller === viewer) return false
 	if (f.other && o.iid !== undefined && o.iid === sourceIid) return false
@@ -163,11 +175,14 @@ export function basePT(s: GameState, p: Perm): [number, number] {
 }
 
 export function keywords(s: GameState, p: Perm): string[] {
-	const out = new Set(rulesOf(s, p).keywords)
+	const own = rulesOf(s, p)
+	const out = new Set(own.keywords)
+	for (const t of own.thresholdKeywords ?? []) if (reached(p, t.n)) t.keywords.forEach((k) => out.add(k))
 	for (const m of p.mods) for (const k of m.keywords ?? []) out.add(k)
 	for (const q of s.battlefield) {
 		const r = rulesOf(s, q)
 		for (const st of r.statics) {
+			if (!reached(q, st.threshold)) continue
 			if (st.kind === 'anthem') {
 				if (q.controller === p.controller && isType(s, p, 'creature') && matches(s, st.filter!, p, q.controller, p.controller, q.iid, p)) for (const k of st.keywords) out.add(k)
 			} else if (q.attachedTo === p.iid) for (const k of st.keywords) out.add(k)
@@ -189,6 +204,7 @@ export function pt(s: GameState, p: Perm): [number, number] {
 	for (const q of s.battlefield) {
 		const r = rulesOf(s, q)
 		for (const st of r.statics) {
+			if (!reached(q, st.threshold)) continue
 			if (st.kind === 'anthem') {
 				if (q.controller === p.controller && matches(s, st.filter!, p, q.controller, p.controller, q.iid, p)) {
 					pw += st.power
