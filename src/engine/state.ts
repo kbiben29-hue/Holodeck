@@ -73,6 +73,10 @@ export function detach(s: GameState, iid: number): { obj: Obj; from: Zone } | nu
 	if (i >= 0) {
 		const p = s.battlefield[i]
 		s.battlefield.splice(i, 1)
+		if (s.combat) {
+			s.combat.attackers = s.combat.attackers.filter((x) => x.iid !== iid)
+			s.combat.blocks = s.combat.blocks.filter((x) => x.blocker !== iid && x.attacker !== iid)
+		}
 		// unattach things attached to it
 		for (const q of s.battlefield) if (q.attachedTo === iid) q.attachedTo = undefined
 		return { obj: { iid: p.iid, card: p.card, owner: p.owner, token: p.token, commander: p.commander }, from: 'battlefield' }
@@ -117,6 +121,8 @@ export function player(s: GameState, i: number): PlayerState {
 /** Card types, counting a stationed Spacecraft as an artifact creature. */
 export function typesOf(s: GameState, p: { card: string; flipped?: boolean; counters?: Record<string, number> }): string[] {
 	const r = rulesOf(s, p)
+	const extra = (p as { addTypes?: string[] }).addTypes
+	if (extra?.length) return [...new Set([...r.types, ...extra])]
 	if (r.stationCreatureAt !== undefined && (p.counters?.charge ?? 0) >= r.stationCreatureAt && !r.types.includes('creature')) return [...r.types, 'creature']
 	return r.types
 }
@@ -148,6 +154,11 @@ export function matches(s: GameState, f: Filter, o: { card: string; flipped?: bo
 	if (f.other && o.iid !== undefined && o.iid === sourceIid) return false
 	if (f.subtypes?.length && !f.subtypes.some((st) => r.subtypes.some((x) => x.toLowerCase() === st || x.toLowerCase() + 's' === st) || r.types.includes(st) || r.supertypes.includes(st))) return false
 	if (f.maxMv !== undefined && def(s, o.card).cmc > f.maxMv) return false
+	if (f.minMv !== undefined && def(s, o.card).cmc < f.minMv) return false
+	if (f.token && !o.token) return false
+	if (f.minToughness !== undefined && !(perm && pt(s, perm)[1] >= f.minToughness)) return false
+	if (f.historic && !(types.includes('artifact') || r.supertypes.includes('legendary') || r.subtypes.includes('Saga'))) return false
+	if (f.withCounters && !(perm && Object.values(perm.counters).some((v) => v > 0))) return false
 	if (f.colors?.length && !f.colors.some((c) => def(s, o.card).colors.includes(c))) return false
 	if (f.nonColors?.length && f.nonColors.some((c) => def(s, o.card).colors.includes(c))) return false
 	if (f.nonToken && o.token) return false

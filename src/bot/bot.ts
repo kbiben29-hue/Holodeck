@@ -31,7 +31,10 @@ export function botIntents(s: GameState, me: number): Intent[] {
 		else if (q.max > q.min) n = Math.max(q.min, Math.min(q.max, sorted.filter((o) => (o.score ?? 0) > 0).length))
 		return [{ type: 'choose', player: me, picks: sorted.slice(0, Math.min(q.max, n)).map((o) => o.id) }]
 	}
-	if (pend.kind === 'attackers' && pend.player === me) return [{ type: 'attack', player: me, attackers: chooseAttackers(s, me) }, { type: 'attack', player: me, attackers: [] }]
+	if (pend.kind === 'attackers' && pend.player === me) {
+		const must = s.battlefield.filter((p) => canAttack(s, p) && (rulesOf(s, p).mustAttack || hasKw(s, p, 'goaded'))).map((p) => p.iid)
+		return [{ type: 'attack', player: me, attackers: chooseAttackers(s, me) }, { type: 'attack', player: me, attackers: must }]
+	}
 	if (pend.kind === 'blockers' && pend.player === me) return [{ type: 'block', player: me, blocks: chooseBlocks(s, me) }, { type: 'block', player: me, blocks: [] }]
 	if (pend.kind !== 'priority' || pend.player !== me) return []
 	const out: Intent[] = []
@@ -55,7 +58,8 @@ export function botIntents(s: GameState, me: number): Intent[] {
 		})
 		.filter((x) => x.v > -50)
 		.sort((a, b) => b.v - a.v)
-	for (const { o } of scored) if (!canCast(s, me, o.iid)) out.push({ type: 'cast', player: me, iid: o.iid })
+	const failed = new Set((pl.failed ?? []).filter((f) => f.turn === s.turn).map((f) => f.iid))
+	for (const { o } of scored) if (!failed.has(o.iid) && !canCast(s, me, o.iid)) out.push({ type: 'cast', player: me, iid: o.iid })
 	// equip unattached equipment to the best creature
 	for (const p of s.battlefield) {
 		if (p.controller !== me || p.attachedTo !== undefined) continue
@@ -68,7 +72,7 @@ export function botIntents(s: GameState, me: number): Intent[] {
 			const r = rulesOf(s, p)
 			const a = r.activated.find((x) => x.station)
 			if (!a || (r.stationCreatureAt !== undefined && (p.counters.charge ?? 0) >= r.stationCreatureAt + 4)) continue
-			if (!abilityProblem(s, me, p, a)) out.push({ type: 'activate', player: me, iid: p.iid, ability: a.index })
+			if (!abilityProblem(s, me, p, a) && !failed.has(p.iid)) out.push({ type: 'activate', player: me, iid: p.iid, ability: a.index })
 		}
 	// simple auto abilities on our own stuff (draw a card, make tokens…), not every turn-wasting one
 	for (const p of s.battlefield) {
@@ -107,6 +111,7 @@ function chooseAttackers(s: GameState, me: number): number[] {
 		const evasive = blockers.length === 0
 		if (evasive || !dies || totalPower >= oppLife + blockers.length * 2) out.push(a.iid)
 	}
+	for (const a of mine) if ((rulesOf(s, a).mustAttack || hasKw(s, a, 'goaded')) && !out.includes(a.iid)) out.push(a.iid)
 	return out
 }
 

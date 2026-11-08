@@ -258,7 +258,7 @@ export const DRILLS: Drill[] = [
 				seed,
 			),
 		steps: (s) => [
-			{ text: 'The Queen makes your artifact creatures +2/+2: she’s 6/6 and each drone is 3/3 — exactly 12. But Kirk would block one. Cast Dispatch on Kirk: you control three artifacts, so Metalcraft exiles him.', hint: { hand: [inHand(s, 0, 'Dispatch')], perms: [perm(s, 1, 'Captain Kirk, Boldly Going')], buttons: ['Cast'] }, done: (x) => perm(x, 1, 'Captain Kirk, Boldly Going') === -1 },
+			{ text: 'The Queen makes your artifact creatures +2/+2: she’s 6/6 and each drone is 3/3 — exactly 12. But Kirk would block one. Cast Dispatch on Kirk: you control three artifacts, so Metalcraft exiles him.', hint: { hand: [inHand(s, 0, 'Dispatch')], perms: s.pending.kind === 'choose' ? [perm(s, 1, 'Captain Kirk, Boldly Going')] : [], buttons: ['Cast'] }, done: (x) => perm(x, 1, 'Captain Kirk, Boldly Going') === -1 },
 			{ text: 'The way is clear. Press Go to combat.', hint: { buttons: ['Go to combat'] }, done: (x) => x.step !== 'main1' },
 			{ text: 'Attack with the Queen and both drones.', hint: { perms: s.battlefield.filter((q) => q.controller === 0 && isCreature(s, q)).map((q) => q.iid), buttons: ['All', 'Attack'] }, done: attacked },
 			{ text: 'The Queen’s attack trigger assimilates a creature from the top of the Ensign’s library — do it by hand or skip it. The damage does the rest.', hint: { buttons: ['Resolve', 'Done'] }, done: oppLife(0) },

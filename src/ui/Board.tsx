@@ -79,6 +79,7 @@ export function Board(props: BoardProps) {
 		setZoom({ iid, x, y })
 	}
 	const unpeek = () => setZoom(null)
+	useEffect(() => setZoom(null), [s.log.length, s.pending.kind])
 	const H = props.hint
 	const hb = (label: string) => (hintMatch(H, label) ? 'hint' : '')
 	const hHand = new Set(H?.hand ?? [])
@@ -117,6 +118,7 @@ export function Board(props: BoardProps) {
 
 	// reset per-decision UI state
 	useEffect(() => {
+		if (pend.kind === 'attackers' && pend.player === me) setAttackSel(s.battlefield.filter((p) => canAttack(s, p) && (rulesOf(s, p).mustAttack || keywords(s, p).includes('goaded'))).map((p) => p.iid))
 		if (pend.kind !== 'attackers') setAttackSel([])
 		if (pend.kind !== 'blockers') {
 			setBlocks([])
@@ -812,6 +814,14 @@ function ActionPanel({ s, me, loc, act, tool, setAttachFrom, close, hb }: { s: G
 			if (rb.types.includes('land')) b(`Play ${d.back.name}`, () => act({ type: 'playLand', player: me, iid: o.iid, back: true }))
 			else b(`Cast ${d.back.name}`, () => act({ type: 'cast', player: me, iid: o.iid, back: true }))
 		}
+		const cy = rulesOf(s, o).cycling
+		if (cy) b(
+				<>
+					{cy.basic ? 'Basic landcycling' : 'Cycle'} <Cost cost={cy.cost} small />
+				</>,
+				() => act({ type: 'cycle', player: me, iid: o.iid }),
+				{ key: 'cycle', text: 'Cycle' },
+			)
 		move('battlefield', 'Put onto battlefield')
 		move('graveyard', 'Discard')
 		move('exile', 'Exile')
@@ -907,6 +917,19 @@ function ActionPanel({ s, me, loc, act, tool, setAttachFrom, close, hb }: { s: G
 			b('Copy it', () => tool({ op: 'copySpell', sid: it.sid }))
 		}
 	} else {
+		const r = rulesOf(s, o)
+		if (loc.owner === me && loc.zone === 'graveyard' && r.flashback)
+			b(
+				<>
+					Flashback <Cost cost={r.flashback} small />
+				</>,
+				() => act({ type: 'cast', player: me, iid: o.iid }),
+				{ primary: true, key: 'fb', text: 'Flashback' },
+			)
+		if (loc.owner === me && loc.zone === 'exile' && s.players[me].playable?.some((x) => x.iid === o.iid && x.until >= s.turn)) {
+			if (r.types.includes('land')) b('Play land', () => act({ type: 'playLand', player: me, iid: o.iid }), { primary: true })
+			else b('Cast', () => act({ type: 'cast', player: me, iid: o.iid }), { primary: true })
+		}
 		move('hand', 'Hand')
 		move('battlefield', 'Battlefield')
 		move('graveyard', 'Graveyard')
@@ -1082,7 +1105,6 @@ function ZoneModal({ s, me, view, close, tool, act }: { s: GameState; me: number
 		cards = pl[view.zone]
 		title = `${pl.name}’s ${view.zone === 'library' ? 'library' : view.zone} (${cards.length})`
 	}
-	void act
 	return (
 		<Modal title={title} onClose={close} wide>
 			{view.zone === 'library' && view.player === me && (
@@ -1105,6 +1127,16 @@ function ZoneModal({ s, me, view, close, tool, act }: { s: GameState; me: number
 							<CardFaceView def={def(s, o.card)} className={open === o.iid ? 'picked' : ''} onClick={() => setOpen(open === o.iid ? null : o.iid)} />
 							{open === o.iid && (
 								<div className="zone-acts">
+									{view.player === me && view.zone === 'graveyard' && rulesOf(s, o).flashback && (
+										<button className="primary" onClick={() => (act({ type: 'cast', player: me, iid: o.iid }) && close(), setOpen(null))}>
+											Flashback
+										</button>
+									)}
+									{view.player === me && view.zone === 'exile' && s.players[me].playable?.some((x) => x.iid === o.iid && x.until >= s.turn) && (
+										<button className="primary" onClick={() => (act(rulesOf(s, o).types.includes('land') ? { type: 'playLand', player: me, iid: o.iid } : { type: 'cast', player: me, iid: o.iid }) && close(), setOpen(null))}>
+											{rulesOf(s, o).types.includes('land') ? 'Play' : 'Cast'}
+										</button>
+									)}
 									{(['hand', 'battlefield', 'graveyard', 'exile', 'library', 'libraryBottom', ...(o.commander ? ['command'] : [])] as const)
 										.filter((z) => z !== view.zone)
 										.map((z) => (

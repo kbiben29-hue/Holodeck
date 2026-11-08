@@ -2,10 +2,10 @@
 // state-based actions, the Commander rules, and the table tools. Pure: `apply` clones its input.
 // Rules references are to the Magic: The Gathering Comprehensive Rules.
 
-import { chooseTargets, discard as discardFx, H, Illegal, makeCtx, NeedChoice, runCompiled, setHooks, stillLegal, type Ctx } from './effects'
+import { chooseTargets, targetOptions, search as searchFx, discard as discardFx, H, Illegal, makeCtx, NeedChoice, runCompiled, setHooks, stillLegal, type Ctx } from './effects'
 import { addCost, costText, parseCost, solvePayment, type Cost, type Source } from './mana'
-import { NAMED } from './named'
-import type { Activated, Compiled, Effect, ManaAbility, Trigger, TriggerEvent } from './rules'
+import { NAMED, setCastFree } from './named'
+import type { Activated, Compiled, Effect, ManaAbility, Rules, Trigger, TriggerEvent } from './rules'
 import { Rng } from './rng'
 import {
 	cardName,
@@ -147,6 +147,77 @@ function gainLife(s: GameState, p: number, n: number) {
 	if (n <= 0) return
 	s.players[p].life += n
 	log(s, `${s.players[p].name} gains ${n} life.`)
+	for (const q of s.battlefield) if (q.controller === p) fire(s, q, 'gainLife')
+}
+
+function setTapped(s: GameState, p: Perm, tapped: boolean) {
+	if (tapped && !p.tapped) {
+		p.tapped = true
+		fire(s, p, 'tapped')
+	} else p.tapped = tapped
+}
+
+/** Saga: the chapter ability for its current lore count. */
+function chapter(s: GameState, p: Perm) {
+	const r = rulesOf(s, p)
+	const n = p.counters.lore ?? 0
+	const ch = r.chapters?.findIndex((c) => c.nums.includes(n)) ?? -1
+	if (ch >= 0) queue(s).push({ iid: p.iid, card: p.card, controller: p.controller, index: -100 - ch })
+}
+
+/** Discover N: exile from the top until a nonland card with mana value N or less; cast it free or put it in hand. */
+function discover(ctx: Ctx, p: number, n: number, key: string) {
+	const s = ctx.s
+	const lib = s.players[p].library
+	const seen: Obj[] = []
+	let hit: Obj | undefined
+	for (const o of lib) {
+		seen.push(o)
+		if (!rulesOf(s, o).types.includes('land') && def(s, o.card).cmc <= n) {
+			hit = o
+			break
+		}
+	}
+	if (!hit) return
+	const [c] = ctx.ask(p, { key, prompt: `Discover ${n}: ${cardName(s, hit.card)}`, options: [{ id: 'cast', label: 'Cast it for free', card: hit.card, score: 2 }, { id: 'hand', label: 'Put it into your hand', score: 1 }], min: 1, max: 1 })
+	for (const o of seen) if (o !== hit) moveCard(s, o.iid, 'libraryBottom', { manual: true })
+	log(s, `${s.players[p].name} discovers ${cardName(s, hit.card)}.`)
+	if (c === 'hand') moveCard(s, hit.iid, 'hand', { manual: true })
+	else castFree(s, p, hit.iid)
+}
+
+/** Cast a card without paying its mana cost (from wherever it is). */
+export function castFree(s: GameState, p: number, iid: number) {
+	const l = locate(s, iid)
+	if (!l) return
+	if (rulesOf(s, l.obj).types.includes('land')) {
+		moveCard(s, iid, 'battlefield', { controller: p, manual: true })
+		return
+	}
+	s.tasks.unshift({ tid: s.nextId++, kind: 'cast', player: p, answers: {}, data: { iid, free: true } })
+}
+
+function later(s: GameState, d: NonNullable<GameState['delayed']>[number]) {
+	;(s.delayed ??= []).push(d)
+}
+
+function runDelayed(s: GameState, at: 'end' | 'cleanup') {
+	const due = (s.delayed ?? []).filter((d) => d.at === at)
+	s.delayed = (s.delayed ?? []).filter((d) => d.at !== at)
+	for (const d of due) {
+		if (d.kind === 'return') {
+			const l = locate(s, d.iid)
+			if (l && l.zone === 'exile') {
+				moveCard(s, d.iid, 'battlefield', { controller: d.owner, manual: true })
+				log(s, `${cardName(s, l.obj.card)} returns to the battlefield.`)
+			}
+		} else if (d.kind === 'exile') {
+			if (findPerm(s, d.iid)) moveCard(s, d.iid, 'exile')
+		} else if (d.kind === 'control') {
+			const q = findPerm(s, d.iid)
+			if (q && d.owner !== undefined) q.controller = d.owner
+		}
+	}
 }
 
 const isPermanentCard = (s: GameState, card: string, back = false) => {
@@ -179,10 +250,25 @@ function triggersOf(s: GameState, p: { card: string; flipped?: boolean }, ev: Tr
 }
 
 function fire(s: GameState, src: { iid: number; card: string; flipped?: boolean; controller: number; counters?: Record<string, number> }, ev: TriggerEvent, about?: number) {
-	for (const { index } of triggersOf(s, src, ev).filter((x) => reached(src, x.t.threshold))) queue(s).push({ iid: src.iid, card: src.card, flipped: src.flipped, controller: src.controller, index, about })
+	// abilities granted by other permanents ("Artifact creatures you control have 'Whenever this creature …'")
+	const perm = findPerm(s, src.iid) ?? (src as Perm)
+	for (const q of s.battlefield)
+		for (const { t, index } of triggersOf(s, q, ev))
+			if (t.granted && q.controller === src.controller && reached(q, t.threshold) && 'counters' in perm && matches(s, t.granted, perm as Perm, q.controller, src.controller, undefined, perm as Perm))
+				queue(s).push({ iid: src.iid, card: q.card, flipped: q.flipped, controller: src.controller, index, about })
+	// "Whenever equipped creature …": the Equipment's own ability
+	for (const q of s.battlefield)
+		if (q.attachedTo === src.iid) for (const { t, index } of triggersOf(s, q, ev)) if (t.equipped) queue(s).push({ iid: q.iid, card: q.card, flipped: q.flipped, controller: q.controller, index, about })
+	for (const { index } of triggersOf(s, src, ev).filter((x) => reached(src, x.t.threshold) && !x.t.granted && !x.t.equipped)) queue(s).push({ iid: src.iid, card: src.card, flipped: src.flipped, controller: src.controller, index, about })
 }
 
 function onEnter(s: GameState, p: Perm) {
+	p.enteredTurn = s.turn
+	const r = rulesOf(s, p)
+	if (r.chapters?.length) {
+		p.counters.lore = (p.counters.lore ?? 0) + 1
+		chapter(s, p)
+	}
 	fire(s, p, 'etb')
 	for (const q of s.battlefield) {
 		if (q.iid === p.iid) {
@@ -202,16 +288,30 @@ export type MoveTo = 'graveyard' | 'exile' | 'hand' | 'library' | 'libraryBottom
  * Move a card to a zone. Handles tokens ceasing to exist, the commander going to the command
  * zone (rule 903.9: we always choose to), leaves-the-battlefield and enters triggers.
  */
-export function moveCard(s: GameState, iid: number, to: MoveTo, opts: { controller?: number; tapped?: boolean; cause?: string; manual?: boolean; flipped?: boolean } = {}) {
+export function moveCard(s: GameState, iid: number, to: MoveTo, opts: { controller?: number; tapped?: boolean; cause?: string; manual?: boolean; flipped?: boolean; kicked?: number; x?: number } = {}) {
 	const before = findPerm(s, iid)
 	const snap = before ? clone(before) : null
+	const gear = before ? s.battlefield.filter((q) => q.attachedTo === iid).map((q) => clone(q)) : []
 	const d = detach(s, iid)
 	if (!d) return
 	const { obj, from } = d
 	let dest: MoveTo = to
 	if (obj.commander && !opts.manual && from !== 'command' && ['graveyard', 'exile', 'hand', 'library', 'libraryBottom'].includes(to)) dest = 'command'
 	if (snap) {
-		if (to === 'graveyard' && isCreatureSnap(s, snap)) fire(s, snap, 'dies')
+		if (isCreatureSnap(s, snap)) ((s as { lastPower?: Record<number, number> }).lastPower ??= {})[snap.iid] = pt(s, { ...snap, controller: snap.controller })[0]
+		// "until this leaves the battlefield" (Malfunctioning Holodeck)
+		for (const k of Object.keys(snap.counters)) if (k.startsWith('holding:')) {
+			const held = Number(k.slice(8))
+			const l = locate(s, held)
+			if (l && l.zone === 'exile') moveCard(s, held, 'battlefield', { controller: l.obj.owner, manual: true })
+		}
+		if (to === 'graveyard' && isCreatureSnap(s, snap)) {
+			fire(s, snap, 'dies')
+			for (const q of gear) for (const { t, index } of triggersOf(s, q, 'dies')) if (t.equipped) queue(s).push({ iid: q.iid, card: q.card, controller: q.controller, index })
+			for (const q of s.battlefield)
+				for (const { t, index } of triggersOf(s, q, 'otherDies'))
+					if (t.filter && matches(s, t.filter, snap, q.controller, snap.controller, q.iid, snap)) queue(s).push({ iid: q.iid, card: q.card, flipped: q.flipped, controller: q.controller, index, about: snap.iid })
+		}
 		fire(s, snap, 'ltb')
 		// equipment/auras attached to it
 		for (const q of s.battlefield) if (q.attachedTo === iid) q.attachedTo = undefined
@@ -231,6 +331,12 @@ export function moveCard(s: GameState, iid: number, to: MoveTo, opts: { controll
 			const p = newPerm(s, plain, controller, { tapped, flipped: opts.flipped })
 			const face = opts.flipped && def(s, obj.card).back ? def(s, obj.card).back! : def(s, obj.card)
 			if (face.loyalty && /^\d+$/.test(face.loyalty)) p.counters.loyalty = Number(face.loyalty)
+			if (opts.kicked) p.kicked = opts.kicked
+			const ew = r.entersWith
+			if (ew) {
+				const n = ew.n === 'x' ? (opts.x ?? 0) : ew.n === 'kicked' ? (opts.kicked ?? 0) : ew.n
+				if (n > 0) p.counters[ew.kind] = (p.counters[ew.kind] ?? 0) + n
+			}
 			s.battlefield.push(p)
 			onEnter(s, p)
 			break
@@ -356,7 +462,11 @@ function createToken(s: GameState, p: number, card: string, n: number, tapped = 
 	return out
 }
 
+setCastFree((s, p, iid) => castFree(s, p, iid))
 setHooks({
+	setTapped,
+	later,
+	discover,
 	move: (s, iid, to, opts) => moveCard(s, iid, to, opts),
 	destroy,
 	damage: dealDamage,
@@ -395,6 +505,8 @@ function manaOptions(s: GameState, p: Perm, a: ManaAbility): { options: Mana[]; 
 
 function canTapForMana(s: GameState, p: Perm, a: ManaAbility): boolean {
 	if (a.cost.tap && p.tapped) return false
+	if (a.cost.needLands && s.battlefield.filter((q) => q.controller === p.controller && isType(s, q, 'land')).length < a.cost.needLands) return false
+	if (a.cost.needArtifact && !s.battlefield.some((q) => q.controller === p.controller && isType(s, q, 'artifact'))) return false
 	if (a.cost.tap && isCreature(s, p) && p.sick && !hasKw(s, p, 'haste')) return false
 	return true
 }
@@ -426,12 +538,18 @@ export function manaSources(s: GameState, player: number, skip: number[] = []): 
 	return out
 }
 
-export function spellCost(s: GameState, player: number, card: string, fromCommand: boolean, back = false): Cost {
+export function spellCost(s: GameState, player: number, card: string, fromCommand: boolean, back = false, fromGraveyard = false): Cost {
 	const d = def(s, card)
-	let c = parseCost(back && d.back ? d.back.manaCost : d.manaCost)
-	if (fromCommand) c = addCost(c, 2 * (s.players[player].commanderCasts[card] ?? 0))
 	const r = rulesOf(s, { card, flipped: back })
+	let c = parseCost(fromGraveyard && r.flashback ? r.flashback : back && d.back ? d.back.manaCost : d.manaCost)
+	if (fromCommand) c = addCost(c, 2 * (s.players[player].commanderCasts[card] ?? 0))
 	if (r.affinity) c = addCost(c, -s.battlefield.filter((p) => p.controller === player && isType(s, p, 'artifact')).length)
+	if (r.selfReduce) c = addCost(c, -s.battlefield.filter((p) => (!r.selfReduce!.mine || p.controller === player) && matches(s, r.selfReduce!.filter, p, player, p.controller, undefined, p)).length)
+	for (const q of s.battlefield) {
+		if (q.controller !== player) continue
+		const cr = rulesOf(s, q).costReduction
+		if (cr && matches(s, cr.filter, { card, flipped: back }, player, player)) c = addCost(c, -cr.n)
+	}
 	return c
 }
 
@@ -493,25 +611,34 @@ const sorceryTime = (s: GameState, p: number) => s.active === p && isMain(s) && 
 const hasPriority = (s: GameState, p: number) => s.pending.kind === 'priority' && s.pending.player === p
 
 function extraLands(s: GameState, p: number): number {
-	return s.battlefield.filter((q) => q.controller === p && /You may play an additional land on each of your turns/.test(def(s, q.card).oracle)).length
+	return s.battlefield.filter((q) => q.controller === p && rulesOf(s, q).extraLand).length
 }
 
 export function canPlayLand(s: GameState, p: number, iid: number, back = false): string | null {
 	if (!hasPriority(s, p)) return 'Wait for your turn to act.'
 	if (!sorceryTime(s, p)) return 'Lands can be played in your main phase when the stack is empty.'
-	const o = s.players[p].hand.find((x) => x.iid === iid)
+	const pl = s.players[p]
+	const o = pl.hand.find((x) => x.iid === iid) ?? pl.exile.find((x) => x.iid === iid && pl.playable?.some((q) => q.iid === iid && q.until >= s.turn))
 	if (!o) return 'That card is not in your hand.'
 	if (!rulesOf(s, { card: o.card, flipped: back }).types.includes('land')) return 'That is not a land.'
 	if (s.players[p].landsPlayed >= 1 + extraLands(s, p)) return 'You already played a land this turn.'
 	return null
 }
 
-function castableFrom(s: GameState, p: number, iid: number): { obj: Obj; zone: 'hand' | 'command' } | null {
+function castableFrom(s: GameState, p: number, iid: number, free = false): { obj: Obj; zone: 'hand' | 'command' | 'graveyard' | 'exile' | 'library' } | null {
 	const pl = s.players[p]
 	const h = pl.hand.find((x) => x.iid === iid)
 	if (h) return { obj: h, zone: 'hand' }
 	const c = pl.command.find((x) => x.iid === iid)
 	if (c) return { obj: c, zone: 'command' }
+	const g = pl.graveyard.find((x) => x.iid === iid)
+	if (g && (free || rulesOf(s, g).flashback)) return { obj: g, zone: 'graveyard' }
+	const e = pl.exile.find((x) => x.iid === iid)
+	if (e && (free || pl.playable?.some((x) => x.iid === iid && x.until >= s.turn))) return { obj: e, zone: 'exile' }
+	if (free) {
+		const l = pl.library.find((x) => x.iid === iid)
+		if (l) return { obj: l, zone: 'library' }
+	}
 	return null
 }
 
@@ -543,6 +670,13 @@ export function abilityProblem(s: GameState, p: number, perm: Perm, a: Activated
 	if (a.loyalty && Object.entries(perm.used ?? {}).some(([k, v]) => k.startsWith('loyalty') && v > 0)) return 'Only one loyalty ability per turn.'
 	if (a.cost.loyalty !== undefined && a.cost.loyalty < 0 && (perm.counters.loyalty ?? 0) < -a.cost.loyalty) return 'Not enough loyalty.'
 	if (a.cost.life && s.players[p].life < a.cost.life) return 'Not enough life.'
+	if (a.cost.tapOther && !s.battlefield.some((q) => q.controller === p && q.iid !== perm.iid && !q.tapped && isCreature(s, q))) return 'You need another untapped creature.'
+	if (a.cost.sacrifice && !s.battlefield.some((q) => q.controller === p && q.iid !== perm.iid && matches(s, a.cost.sacrifice!, q, p, p, undefined, q))) return 'You have nothing to sacrifice for it.'
+	if (a.cost.removeCounters) {
+		const rc = a.cost.removeCounters
+		const have = rc.fromAmong ? s.battlefield.filter((q) => q.controller === p).reduce((n, q) => n + (q.counters[rc.kind ?? ''] ?? 0), 0) : rc.kind ? (perm.counters[rc.kind] ?? 0) : Object.values(perm.counters).reduce((n, v) => n + v, 0)
+		if (have < rc.n) return 'Not enough counters.'
+	}
 	if (a.cost.mana && !canPay(s, p, parseCost(a.cost.mana), 0, a.cost.tap ? [perm.iid] : [])) return `Not enough mana (needs ${a.cost.mana}).`
 	return null
 }
@@ -608,8 +742,10 @@ function runTask(s: GameState, task: Task): GameState {
 			return s
 		}
 		if (e instanceof Illegal && (task.kind === 'cast' || task.kind === 'activate')) {
-			// undo the attempt: drop the task, keep priority
+			// undo the attempt: drop the task, keep priority (and remember it, so the computer doesn't retry it this turn)
 			s.tasks = s.tasks.filter((t) => t.tid !== task.tid)
+			const pl = s.players[task.player]
+			pl.failed = [...(pl.failed ?? []).filter((f) => f.turn === s.turn), { iid: (task.data as { iid: number }).iid, turn: s.turn }]
 			s.notice = { player: task.player, text: e.message }
 			s.pending = { kind: 'priority', player: task.player }
 			return s
@@ -621,13 +757,28 @@ function runTask(s: GameState, task: Task): GameState {
 
 function doCast(ctx: Ctx) {
 	const s = ctx.s
-	const { iid, back } = ctx.task.data as { iid: number; back?: boolean }
+	const { iid, back, free } = ctx.task.data as { iid: number; back?: boolean; free?: boolean }
 	const p = ctx.task.player
-	const f = castableFrom(s, p, iid)
+	const f = castableFrom(s, p, iid, free)
 	if (!f) throw new Illegal('That card is no longer available.')
 	const card = f.obj.card
 	const r = rulesOf(s, { card, flipped: back })
-	const cost = spellCost(s, p, card, f.zone === 'command', back)
+	const flashback = f.zone === 'graveyard' && !free
+	let cost = free ? parseCost('') : spellCost(s, p, card, f.zone === 'command', back, flashback)
+	// kicker / multikicker / squad
+	let kicked = 0
+	const extra = r.kicker ?? r.multikicker ?? r.squad
+	if (extra && !free) {
+		const many = !r.kicker
+		const opts: { id: string; label: string; score: number }[] = []
+		for (let k = 0; k <= (many ? 6 : 1); k++) {
+			let c2 = cost
+			for (let j = 0; j < k; j++) c2 = joinCost(c2, parseCost(extra))
+			if (canPay(s, p, c2, 0)) opts.push({ id: String(k), label: k === 0 ? `Don\u2019t pay ${r.kicker ? 'kicker' : r.squad ? 'squad' : 'multikicker'}` : `Pay ${extra}${many ? ` ×${k}` : ''}`, score: k })
+		}
+		if (opts.length > 1) kicked = Number(ctx.ask(p, { key: 'kick', prompt: `${cardName(s, card)}: pay ${r.kicker ? 'kicker' : r.squad ? 'squad (one copy each)' : 'multikicker'} ${extra}?`, options: opts, min: 1, max: 1 })[0])
+		for (let j = 0; j < kicked; j++) cost = joinCost(cost, parseCost(extra))
+	}
 	let x = 0
 	if (cost.x > 0) {
 		const opts = []
@@ -638,7 +789,21 @@ function doCast(ctx: Ctx) {
 	// targets: spell effect targets, or an Aura's enchant target
 	let targets: Target[] = []
 	let manual = false
-	if (r.types.includes('instant') || r.types.includes('sorcery')) {
+	let modes: number[] | undefined
+	if (r.modal) {
+		const m = r.modal
+		// only modes that can find their targets
+		const usable = (md: (typeof m.modes)[number]) => !md.compiled || md.compiled.targets.every((t) => (t.min ?? 1) === 0 || targetOptions(s, t, p, { card }).length >= (t.min ?? 1))
+		const opts = m.modes.map((md, i) => ({ id: String(i), label: md.text + (md.compiled ? '' : ' (by hand)'), score: md.compiled ? 1 : 0, ok: usable(md) })).filter((o) => o.ok).map(({ ok, ...o }) => (void ok, o))
+		if (opts.length < (m.upTo ? 1 : Math.min(m.n, m.modes.length))) throw new Illegal('Not enough of its modes can be chosen right now.')
+		modes = ctx.ask(p, { key: 'modes', prompt: `${cardName(s, card)}: choose ${m.n === 1 ? 'one' : m.upTo ? 'one or both' : 'two'}`, options: opts, min: m.upTo ? 1 : Math.min(m.n, opts.length), max: Math.min(m.n, opts.length) }).map(Number).sort((a, b) => a - b)
+		const comp = modalCompiled(r, modes)
+		if (comp) {
+			const t = chooseTargets(ctx, comp, p, { card }, 'c')
+			if (!t) throw new Illegal('There are no legal targets for those modes.')
+			targets = t
+		} else manual = true
+	} else if (r.types.includes('instant') || r.types.includes('sorcery')) {
 		const comp = spellCompiled(s, card, back)
 		if (comp) {
 			const t = chooseTargets(ctx, comp, p, { card }, 'c')
@@ -650,13 +815,74 @@ function doCast(ctx: Ctx) {
 		if (!t) throw new Illegal('There is nothing it can enchant.')
 		targets = t
 	}
-	pay(s, p, cost, x)
+	// additional costs
+	const ec = r.extraCost
+	if (ec && !free) {
+		if (ec.lifeX) {
+			const opts = []
+			for (let i = 0; i <= Math.max(0, s.players[p].life - 1); i++) opts.push({ id: String(i), label: `Pay ${i} life`, score: i })
+			x = Number(ctx.ask(p, { key: 'lifex', prompt: `${cardName(s, card)}: pay X life`, options: opts.slice(0, 21), min: 1, max: 1 })[0])
+		}
+		if (ec.discard) {
+			const others = s.players[p].hand.filter((o) => o.iid !== iid)
+			let payLife = false
+			if (ec.orLife) {
+				const opts = [{ id: 'life', label: `Pay ${ec.orLife} life`, score: s.players[p].life > 10 ? 2 : 0 }]
+				if (others.length) opts.push({ id: 'discard', label: 'Discard a card', score: 1 })
+				payLife = ctx.ask(p, { key: 'orlife', prompt: `${cardName(s, card)}: additional cost`, options: opts, min: 1, max: 1 })[0] === 'life'
+			}
+			if (!payLife) {
+				if (others.length < ec.discard) throw new Illegal('You need a card to discard.')
+				const picks = ctx.ask(p, { key: 'ecd', prompt: `${cardName(s, card)}: discard ${ec.discard} as an additional cost`, options: others.map((o) => ({ id: String(o.iid), label: cardName(s, o.card), card: o.card, iid: o.iid, score: -def(s, o.card).cmc })), min: ec.discard, max: ec.discard, cards: true })
+				for (const id of picks) moveCard(s, Number(id), 'graveyard')
+			} else s.players[p].life -= ec.orLife!
+		}
+		if (ec.sacrifice) {
+			const opts = s.battlefield.filter((q) => q.controller === p && matches(s, ec.sacrifice!, q, p, p, undefined, q))
+			if (!opts.length) throw new Illegal('You have nothing to sacrifice for it.')
+			const [pick] = ctx.ask(p, { key: 'ecs', prompt: `${cardName(s, card)}: sacrifice as an additional cost`, options: opts.map((q) => ({ id: String(q.iid), label: permName(s, q), card: q.card, iid: q.iid, score: -def(s, q.card).cmc })), min: 1, max: 1, cards: true })
+			moveCard(s, Number(pick), 'graveyard', { cause: 'sacrifice' })
+		}
+		if (ec.lifeX) s.players[p].life -= x
+	}
+	if (!free) pay(s, p, cost, x)
 	const it = detach(s, iid)!
 	if (f.zone === 'command') s.players[p].commanderCasts[card] = (s.players[p].commanderCasts[card] ?? 0) + 1
-	s.stack.push({ sid: s.nextId++, kind: 'spell', controller: p, card, iid, obj: it.obj, text: back && def(s, card).back ? def(s, card).back!.name : cardName(s, card), targets, x, fromCommand: f.zone === 'command', manual, ...(back ? { ability: -1 } : {}) })
-	log(s, `${s.players[p].name} casts ${cardName(s, card)}${f.zone === 'command' ? ' from the command zone' : ''}${x ? ` (X=${x})` : ''}${targets.length ? ` targeting ${targets.map((t) => targetName(s, t)).join(', ')}` : ''}.`)
+	s.players[p].playable = s.players[p].playable?.filter((q) => q.iid !== iid)
+	s.stack.push({ sid: s.nextId++, kind: 'spell', controller: p, card, iid, obj: it.obj, text: back && def(s, card).back ? def(s, card).back!.name : cardName(s, card), targets, x, fromCommand: f.zone === 'command', manual, modes, kicked: kicked || undefined, flashback: flashback || undefined, ...(back ? { ability: -1 } : {}) })
+	log(s, `${s.players[p].name} casts ${cardName(s, card)}${f.zone === 'command' ? ' from the command zone' : flashback ? ' with flashback' : free ? ' without paying its mana cost' : ''}${x ? ` (X=${x})` : ''}${kicked ? ' (kicked)' : ''}${targets.length ? ` targeting ${targets.map((t) => targetName(s, t)).join(', ')}` : ''}.`)
 	for (const { index } of triggersOf(s, { card }, 'cast')) queue(s).push({ iid, card, controller: p, index })
+	// "whenever you cast …" / "whenever an opponent casts …"
+	for (const q of s.battlefield)
+		for (const { t, index } of triggersOf(s, q, 'castSpell'))
+			if (reached(q, t.threshold) && (t.who === 'any' || (t.who === 'you') === (q.controller === p)) && (!t.filter || matches(s, t.filter, { card }, q.controller, p)))
+				queue(s).push({ iid: q.iid, card: q.card, flipped: q.flipped, controller: q.controller, index })
 	afterStackAdd(s, p)
+}
+
+function joinCost(a: Cost, b: Cost): Cost {
+	const sym = { ...a.sym }
+	for (const [k, v] of Object.entries(b.sym)) sym[k as Mana] = (sym[k as Mana] ?? 0) + (v ?? 0)
+	return { generic: a.generic + b.generic, sym, hybrid: [...a.hybrid, ...b.hybrid], x: a.x + b.x, phyrexian: [...a.phyrexian, ...b.phyrexian] }
+}
+
+/** Merge the chosen modes of a modal spell into one compiled effect (targets renumbered). */
+export function modalCompiled(r: Rules, modes: number[]): Compiled | null {
+	const out: Compiled = { targets: [], effects: [] }
+	for (const i of modes) {
+		const c = r.modal?.modes[i]?.compiled
+		if (!c) return null
+		const base = out.targets.length
+		out.targets.push(...c.targets)
+		for (const e of c.effects) out.effects.push(renumber(e, base))
+	}
+	return out
+}
+
+function renumber(e: Effect, base: number): Effect {
+	const x = { ...e } as Record<string, unknown>
+	for (const k of ['t', 'a', 'b']) if (typeof x[k] === 'number') x[k] = (x[k] as number) + base
+	return x as Effect
 }
 
 function targetName(s: GameState, t: Target): string {
@@ -704,7 +930,24 @@ function doActivate(ctx: Ctx) {
 		discardFx(ctx, p, a.cost.discard, 'cd')
 	}
 	if (a.cost.mana) pay(s, p, parseCost(a.cost.mana), 0, a.cost.tap ? [perm.iid] : [])
-	if (a.cost.tap) perm.tapped = true
+	if (a.cost.tapOther) {
+		const crew = s.battlefield.filter((q) => q.controller === p && q.iid !== iid && !q.tapped && isCreature(s, q))
+		const [pick] = ctx.ask(p, { key: 'tapo', prompt: `${permName(s, perm)}: tap an untapped creature you control`, options: crew.map((q) => ({ id: String(q.iid), label: permName(s, q), card: q.card, iid: q.iid, score: -pt(s, q)[0] })), min: 1, max: 1, cards: true })
+		setTapped(s, findPerm(s, Number(pick))!, true)
+	}
+	if (a.cost.removeCounters) {
+		const rc = a.cost.removeCounters
+		let left = rc.n
+		const pool = rc.fromAmong ? s.battlefield.filter((q) => q.controller === p) : [perm]
+		for (const q of pool)
+			for (const k of rc.kind ? [rc.kind] : Object.keys(q.counters)) {
+				while (left > 0 && (q.counters[k] ?? 0) > 0) {
+					q.counters[k]--
+					left--
+				}
+			}
+	}
+	if (a.cost.tap) setTapped(s, perm, true)
 	if (a.cost.untap) perm.tapped = false
 	if (a.cost.life) s.players[p].life -= a.cost.life
 	if (a.cost.loyalty !== undefined) {
@@ -713,6 +956,11 @@ function doActivate(ctx: Ctx) {
 	}
 	perm.used = { ...(perm.used ?? {}), [a.index]: (perm.used?.[a.index] ?? 0) + 1 }
 	const card = perm.card
+	if (a.cost.sacrifice) {
+		const opts = s.battlefield.filter((q) => q.controller === p && q.iid !== iid && matches(s, a.cost.sacrifice!, q, p, p, undefined, q))
+		const [pick] = ctx.ask(p, { key: 'sacc', prompt: `${permName(s, perm)}: sacrifice ${a.cost.sacrifice.subtypes?.join(' or ') || a.cost.sacrifice.types.join(' or ') || 'a permanent'}`, options: opts.map((q) => ({ id: String(q.iid), label: permName(s, q), card: q.card, iid: q.iid, score: -def(s, q.card).cmc })), min: 1, max: 1, cards: true })
+		moveCard(s, Number(pick), 'graveyard', { cause: 'sacrifice' })
+	}
 	if (a.cost.sacrificeSelf) moveCard(s, iid, 'graveyard', { cause: 'sacrifice' })
 	s.stack.push({ sid: s.nextId++, kind: 'ability', controller: p, card, iid, text: a.station ? `Station: +${x} charge` : a.text, ability: a.index, targets, x, manual: !a.compiled || !!a.cost.other })
 	log(s, `${s.players[p].name} activates ${cardName(s, card)}${a.equip ? ' (equip)' : ''}${targets.length ? ` targeting ${targets.map((t) => targetName(s, t)).join(', ')}` : ''}.${a.cost.other ? ` (Pay by hand: ${a.cost.other}.)` : ''}`)
@@ -722,7 +970,10 @@ function doActivate(ctx: Ctx) {
 function doTrigger(ctx: Ctx) {
 	const s = ctx.s
 	const q = ctx.task.data as unknown as QueuedTrigger
-	const t = rulesOf(s, { card: q.card, flipped: q.flipped }).triggers[q.index]
+	const r0 = rulesOf(s, { card: q.card, flipped: q.flipped })
+	const chapterIdx = q.index <= -100 ? -100 - q.index : -1
+	const ch = chapterIdx >= 0 ? r0.chapters?.[chapterIdx] : undefined
+	const t = ch ? ({ index: q.index, event: 'etb', text: `Chapter: ${ch.text}`, effectText: ch.text, compiled: ch.compiled } as Trigger) : r0.triggers[q.index]
 	if (!t) return
 	let targets: Target[] = []
 	if (t.compiled && t.compiled.targets.length) {
@@ -733,7 +984,7 @@ function doTrigger(ctx: Ctx) {
 		}
 		targets = tt
 	}
-	s.stack.push({ sid: s.nextId++, kind: 'trigger', controller: q.controller, card: q.card, iid: q.iid, text: t.text, ability: q.index, targets, manual: !t.compiled, flipped: q.flipped })
+	s.stack.push({ sid: s.nextId++, kind: 'trigger', controller: q.controller, card: q.card, iid: q.iid, text: t.text, ability: q.index, targets, manual: !t.compiled, flipped: q.flipped, chapter: ch ? chapterIdx : undefined, x: t.event === 'combatDamagePlayer' && typeof q.about === 'number' ? q.about : undefined })
 	s.passes = 0
 	s.pending = { kind: 'priority', player: s.active }
 }
@@ -752,15 +1003,19 @@ function doResolve(ctx: Ctx) {
 		const back = it.ability === -1
 		const r = rulesOf(s, { card: it.card, flipped: back })
 		if (!isPermanentCard(s, it.card, back)) {
-			const comp = spellCompiled(s, it.card, back)
+			const comp = it.modes ? modalCompiled(r, it.modes) : spellCompiled(s, it.card, back)
 			if (comp && !it.manual) {
-				const legal = comp.targets.map((spec, i) => stillLegal(s, spec, it.targets[i], me, { card: it.card }))
-				if (comp.targets.length && legal.every((l) => !l)) log(s, `${cardName(s, it.card)} has no legal targets and does nothing.`)
+				// rule 608.2b: if it had targets and all of them are now illegal, it does nothing
+				const legal = it.targets.map((t, j) => {
+					const spec = comp.targets[t.spec ?? j]
+					return !!spec && stillLegal(s, spec, t, me, { card: it.card })
+				})
+				if (it.targets.length && legal.every((l) => !l)) log(s, `${cardName(s, it.card)} has no legal targets and does nothing.`)
 				else runCompiled(ctx, it, comp)
 			}
 			if (it.obj && !it.copy) {
 				const o = it.obj
-				s.players[o.owner].graveyard.push(o)
+				s.players[o.owner][it.flashback ? 'exile' : 'graveyard'].push(o)
 				if (o.commander) moveCard(s, o.iid, 'command')
 			}
 			log(s, `${cardName(s, it.card)} resolves.`)
@@ -780,7 +1035,9 @@ function doResolve(ctx: Ctx) {
 				moveCard(s, o.iid, 'battlefield', { controller: me, flipped: back })
 				const perm = findPerm(s, o.iid)
 				if (perm) perm.attachedTo = host.iid
-			} else moveCard(s, o.iid, 'battlefield', { controller: me, flipped: back })
+			} else moveCard(s, o.iid, 'battlefield', { controller: me, flipped: back, kicked: it.kicked, x: it.x })
+			// squad: token copies
+			if (r.squad && it.kicked) createToken(s, me, it.card, it.kicked)
 			log(s, `${cardName(s, it.card)} enters the battlefield.`)
 		}
 		return
@@ -810,6 +1067,11 @@ function doResolve(ctx: Ctx) {
 		if (a?.compiled && !it.manual) runCompiled(ctx, it, a.compiled)
 		return
 	}
+	if (it.chapter !== undefined) {
+		const c = r.chapters?.[it.chapter]?.compiled
+		if (c && !it.manual) runCompiled(ctx, it, c)
+		return
+	}
 	const t = r.triggers[it.ability ?? -1]
 	if (t?.compiled && !it.manual) runCompiled(ctx, it, t.compiled)
 }
@@ -817,6 +1079,10 @@ function doResolve(ctx: Ctx) {
 function doScript(ctx: Ctx) {
 	const s = ctx.s
 	const d = ctx.task.data as { kind: string; count?: number }
+	if (d.kind === 'cycleSearch') {
+		searchFx(ctx, ctx.task.player, { e: 'search', filter: { types: ['land'], not: [], basic: true }, count: 1, dest: 'hand', tapped: false, reveal: true }, 'cs')
+		return
+	}
 	if (d.kind === 'cleanupDiscard') {
 		const p = s.active
 		const n = s.players[p].hand.length - 7
@@ -876,6 +1142,11 @@ function checkSBA(s: GameState): boolean {
 			continue
 		}
 		const r = rulesOf(s, p)
+		if (r.chapters?.length && (p.counters.lore ?? 0) >= Math.max(...r.chapters.flatMap((c) => c.nums)) && !s.stack.some((it) => it.iid === p.iid && it.chapter !== undefined) && !queue(s).some((q) => q.iid === p.iid) && !s.tasks.some((t) => (t.data as { iid?: number }).iid === p.iid)) {
+			moveCard(s, p.iid, 'graveyard', { cause: 'sacrifice' })
+			changed = true
+			continue
+		}
 		if (r.subtypes.includes('Aura') && (p.attachedTo === undefined || !findPerm(s, p.attachedTo))) {
 			moveCard(s, p.iid, 'graveyard')
 			changed = true
@@ -912,6 +1183,10 @@ export function canBlock(s: GameState, blocker: Perm, attacker: Perm): boolean {
 	if (blocker.tapped || !isCreature(s, blocker) || blocker.controller === attacker.controller) return false
 	const ak = keywords(s, attacker)
 	const bk = keywords(s, blocker)
+	const ar = rulesOf(s, attacker)
+	if (bk.includes('cantblock') || rulesOf(s, blocker).cantBlock) return false
+	if (ar.unblockable === true || (ar.unblockable === 'ifSpacecraft' && s.battlefield.some((q) => q.controller === attacker.controller && rulesOf(s, q).subtypes.includes('Spacecraft')))) return false
+	if (ar.evasionPower !== undefined && pt(s, blocker)[0] <= ar.evasionPower) return false
 	if ((ak.includes('flying') || ak.includes('horsemanship')) && !bk.includes('flying') && !bk.includes('reach')) return false
 	if (ak.includes('unblockable')) return false
 	if (ak.includes('fear') && !def(s, blocker.card).colors.includes('B') && !isType(s, blocker, 'artifact')) return false
@@ -932,9 +1207,16 @@ export function canBlock(s: GameState, blocker: Perm, attacker: Perm): boolean {
 function enterStep(s: GameState, step: Step) {
 	s.step = step
 	s.passes = 0
-	for (const pl of s.players) pl.pool = emptyPool()
+	for (const pl of s.players) if (!pl.floating) pl.pool = emptyPool()
 	const a = s.active
 	switch (step) {
+		case 'main1':
+			for (const p of s.battlefield)
+				if (p.controller === a && rulesOf(s, p).chapters?.length) {
+					p.counters.lore = (p.counters.lore ?? 0) + 1
+					chapter(s, p)
+				}
+			break
 		case 'untap': {
 			s.turn++
 			const pl = s.players[a]
@@ -946,15 +1228,23 @@ function enterStep(s: GameState, step: Step) {
 					p.sick = false
 				}
 				p.used = undefined
+				p.mods = p.mods.filter((m) => !(m.until === 'turn' && (m.expires ?? 0) <= s.turn))
 			}
 			log(s, `— Turn ${s.turn}: ${pl.name} —`)
 			return enterStep(s, 'upkeep')
 		}
 		case 'upkeep':
-			for (const p of s.battlefield) if (p.controller === a) fire(s, p, 'upkeep')
+			for (const p of s.battlefield) {
+				if (p.controller === a) fire(s, p, 'upkeep')
+				fire(s, p, 'eachUpkeep')
+			}
 			break
 		case 'draw':
 			if (!(s.turn === 1 && a === s.firstPlayer)) drawCards(s, a, 1, true)
+			for (const p of s.battlefield) {
+				if (p.controller === a) fire(s, p, 'yourDraw')
+				fire(s, p, 'eachDraw')
+			}
 			break
 		case 'beginCombat': {
 			s.combat = { attackers: [], blocks: [], declared: false, blocksDeclared: false, firstStrikeDone: false }
@@ -1008,11 +1298,17 @@ function enterStep(s: GameState, step: Step) {
 			s.combat = null
 			break
 		case 'end':
-			for (const p of s.battlefield) if (p.controller === a) fire(s, p, 'endStep')
+			runDelayed(s, 'end')
+			for (const p of s.battlefield) {
+				if (p.controller === a) fire(s, p, 'endStep')
+				fire(s, p, 'eachEndStep')
+			}
 			break
 		case 'cleanup': {
+			runDelayed(s, 'cleanup')
+			for (const x of s.players) x.floating = 0
 			const pl = s.players[a]
-			const noMax = s.battlefield.some((p) => p.controller === a && /You have no maximum hand size/.test(def(s, p.card).oracle))
+			const noMax = s.battlefield.some((p) => p.controller === a && rulesOf(s, p).noMaxHandSize)
 			if (pl.hand.length > 7 && !noMax) addTask(s, 'script', a, { kind: 'cleanupDiscard' })
 			for (const p of s.battlefield) {
 				p.damage = 0
@@ -1080,8 +1376,13 @@ function combatDamage(s: GameState, first: boolean) {
 	}
 	for (const d of dealt) {
 		dealDamage(s, { card: d.src.card, controller: d.src.controller, iid: d.src.iid }, d.t, d.n, true)
-		if (d.t.kind === 'player') fire(s, d.src, 'combatDamagePlayer')
+		if (d.t.kind === 'player') fire(s, d.src, 'combatDamagePlayer', d.n)
 	}
+	// "whenever one or more Officers you control deal combat damage to a player" — once per damage step
+	for (const q of s.battlefield)
+		for (const { t, index } of triggersOf(s, q, 'teamDamage'))
+			if (dealt.some((d) => d.t.kind === 'player' && d.src.controller === q.controller && (!t.filter || matches(s, t.filter, d.src, q.controller, d.src.controller, undefined, d.src))))
+				queue(s).push({ iid: q.iid, card: q.card, flipped: q.flipped, controller: q.controller, index })
 	if (first) c.firstStrikeDone = true
 }
 
@@ -1206,7 +1507,7 @@ export function apply(s0: GameState, intent: Intent): GameState {
 			const why = canPlayLand(s, p, intent.iid, intent.back)
 			need(!why, why ?? '')
 			s.players[p].landsPlayed++
-			const o = s.players[p].hand.find((x) => x.iid === intent.iid)!
+			const o = (s.players[p].hand.find((x) => x.iid === intent.iid) ?? s.players[p].exile.find((x) => x.iid === intent.iid))!
 			moveCard(s, intent.iid, 'battlefield', { controller: p, flipped: intent.back })
 			log(s, `${s.players[p].name} plays ${cardName(s, o.card)}.`)
 			break
@@ -1261,14 +1562,29 @@ export function apply(s0: GameState, intent: Intent): GameState {
 				const a = findPerm(s, iid)
 				need(!!a && canAttack(s, a), `${a ? permName(s, a) : 'That'} can't attack.`)
 			}
+			for (const q of s.battlefield)
+				if (canAttack(s, q) && (rulesOf(s, q).mustAttack || hasKw(s, q, 'goaded')) && !intent.attackers.includes(q.iid)) throw new Illegal(`${permName(s, q)} attacks each combat if able.`)
 			c.attackers = intent.attackers.map((iid) => ({ iid, defender: opp(p) }))
 			c.declared = true
 			for (const iid of intent.attackers) {
 				const a = findPerm(s, iid)!
-				if (!hasKw(s, a, 'vigilance')) a.tapped = true
+				if (!hasKw(s, a, 'vigilance')) setTapped(s, a, true)
 				fire(s, a, 'attacks')
 			}
-			if (intent.attackers.length) for (const q of s.battlefield) if (q.controller === p) fire(s, q, 'youAttack')
+			if (intent.attackers.length) {
+				const atk = intent.attackers.map((iid) => findPerm(s, iid)!).filter(Boolean)
+				for (const a of atk) {
+					if (hasKw(s, a, 'melee')) a.mods.push({ power: 1, toughness: 1, until: 'eot' })
+					if (hasKw(s, a, 'battle cry')) for (const b of atk) if (b !== a) b.mods.push({ power: 1, toughness: 0, until: 'eot' })
+				}
+				for (const sa of s.battlefield.filter((q) => q.controller === p && rulesOf(s, q).sharedAnimosity))
+					for (const a of atk) {
+						const mine = rulesOf(s, a).subtypes
+						const n = atk.filter((b) => b !== a && rulesOf(s, b).subtypes.some((t) => mine.includes(t))).length
+						if (n) a.mods.push({ power: n, toughness: 0, until: 'eot', note: permName(s, sa) })
+					}
+				for (const q of s.battlefield) if (q.controller === p) fire(s, q, 'youAttack')
+			}
 			if (intent.attackers.length) log(s, `${s.players[p].name} attacks with ${intent.attackers.map((iid) => permName(s, findPerm(s, iid)!)).join(', ')}.`)
 			else {
 				s.combat = null
@@ -1330,6 +1646,19 @@ export function apply(s0: GameState, intent: Intent): GameState {
 			return s.pending.kind === 'choose' ? s : settle(s)
 		case 'resolveManual':
 			break
+		case 'cycle': {
+			need(pend.kind === 'priority' && pend.player === p, 'Wait until you have priority.')
+			const o = s.players[p].hand.find((x) => x.iid === intent.iid)
+			need(!!o, 'That card is not in your hand.')
+			const cy = rulesOf(s, o!).cycling
+			need(!!cy, 'That card has no cycling.')
+			pay(s, p, parseCost(cy!.cost), 0)
+			moveCard(s, o!.iid, 'graveyard')
+			log(s, `${s.players[p].name} cycles ${cardName(s, o!.card)}.`)
+			if (cy!.basic) addTask(s, 'script', p, { kind: 'cycleSearch' })
+			else drawCards(s, p, 1)
+			break
+		}
 	}
 	s = settle(s)
 	if ((intent.type === 'cast' || intent.type === 'activate') && s.notice && s.notice.player === p && !s0.notice) throw new Illegal(s.notice.text)

@@ -60,8 +60,9 @@ export interface Mod {
 	power: number
 	toughness: number
 	keywords?: string[]
-	/** 'eot' = until end of turn; 'perm' = until removed with the table tools. */
-	until: 'eot' | 'perm'
+	/** 'eot' = until end of turn; 'perm' = until removed with the table tools; 'turn' = until turn `expires` begins. */
+	until: 'eot' | 'perm' | 'turn'
+	expires?: number
 	note?: string
 }
 
@@ -80,6 +81,12 @@ export interface Perm extends Obj {
 	flipped?: boolean
 	faceDown?: boolean
 	mods: Mod[]
+	/** Kicker paid (times). */
+	kicked?: number
+	/** Turn it entered the battlefield. */
+	enteredTurn?: number
+	/** Extra types (assimilated: a Borg artifact creature). */
+	addTypes?: string[]
 	/** Number of this turn's activations of each once-per-turn ability. */
 	used?: Record<string, number>
 }
@@ -87,6 +94,10 @@ export interface Perm extends Obj {
 export interface Target {
 	kind: 'perm' | 'player' | 'stack'
 	id: number
+	/** Which target phrase of the ability it answers (default: its position). */
+	spec?: number
+	/** Controller when chosen. */
+	ctl?: number
 }
 
 export interface StackItem {
@@ -112,6 +123,14 @@ export interface StackItem {
 	manual?: boolean
 	/** The source showed its back face. */
 	flipped?: boolean
+	/** Chosen modes (modal spells). */
+	modes?: number[]
+	/** Kicker / squad / multikicker paid. */
+	kicked?: number
+	/** Cast with flashback (exile it afterwards). */
+	flashback?: boolean
+	/** Saga chapter number. */
+	chapter?: number
 }
 
 export interface PlayerState {
@@ -131,6 +150,12 @@ export interface PlayerState {
 	commanderDamage: Record<string, number>
 	mulligans: number
 	kept: boolean
+	/** Casts/activations that failed this turn (the computer doesn't retry them). */
+	failed?: { iid: number; turn: number }[]
+	/** Mana that doesn't empty between steps this turn. */
+	floating?: number
+	/** Cards that may be played from exile until a turn ends (Worf's Battlefront). */
+	playable?: { iid: number; until: number }[]
 	/** Cards drawn this turn (for "whenever you draw your second card each turn"). */
 	drawsThisTurn?: number
 	lost?: string
@@ -241,6 +266,8 @@ export interface GameState {
 	firstPlayer: number
 	/** Number of free (land-or-not) state changes, to stop runaway loops. */
 	ticks: number
+	/** Things that happen later ("at the beginning of the next end step"). */
+	delayed?: { at: 'end' | 'cleanup'; kind: 'return' | 'exile' | 'control'; iid: number; owner?: number }[]
 }
 
 export interface DeckList {
@@ -293,3 +320,4 @@ export type Intent =
 	| { type: 'concede'; player: number }
 	| { type: 'manual'; player: number; m: ManualOp }
 	| { type: 'resolveManual'; player: number }
+	| { type: 'cycle'; player: number; iid: number }

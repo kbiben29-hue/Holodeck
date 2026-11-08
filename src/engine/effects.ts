@@ -47,6 +47,9 @@ export interface EngineHooks {
 	makeTokenDef(s: GameState, e: Extract<Effect, { e: 'token' }>, x: number): string
 	gainLife(s: GameState, p: number, n: number): void
 	shuffle(s: GameState, p: number): void
+	setTapped(s: GameState, p: Perm, tapped: boolean): void
+	later(s: GameState, d: { at: 'end' | 'cleanup'; kind: 'return' | 'exile' | 'control'; iid: number; owner?: number }): void
+	discover(ctx: Ctx, p: number, n: number, key: string): void
 }
 
 let hooks: EngineHooks
@@ -83,6 +86,8 @@ export function targetOptions(s: GameState, spec: TargetSpec, chooser: number, s
 		s.players.forEach((_, i) => addPlayer(i))
 	}
 	if (spec.kind === 'player') s.players.forEach((_, i) => (!spec.opponent || i !== chooser) && addPlayer(i))
+	if (spec.kind === 'stackAny')
+		for (const it of s.stack) out.push({ id: `s:${it.sid}`, label: `${cardName(s, it.card)}${it.kind === 'spell' ? '' : ' ability'} (${s.players[it.controller].name})`, card: it.card, score: it.controller === chooser ? -5 : 3 })
 	if (spec.kind === 'spell')
 		for (const it of s.stack) {
 			if (it.kind !== 'spell') continue
@@ -100,10 +105,19 @@ export function chooseTargets(ctx: Ctx, compiled: Compiled, chooser: number, src
 	const out: Target[] = []
 	for (let i = 0; i < compiled.targets.length; i++) {
 		const spec = compiled.targets[i]
+		const min = spec.min ?? 1
+		const max = spec.max ?? 1
 		const opts = targetOptions(ctx.s, spec, chooser, src).filter((o) => !out.some((t) => `${t.kind === 'perm' ? 'p' : t.kind === 'player' ? 'pl' : 's'}:${t.id}` === o.id))
-		if (!opts.length) return null
-		const [pick] = ctx.ask(chooser, { key: `${keyPrefix}t${i}`, prompt: `${cardName(ctx.s, src.card)}: choose ${describeSpec(spec)}`, options: opts, min: 1, max: 1 })
-		out.push(parseTargetId(pick))
+		if (opts.length < Math.max(1, min)) {
+			if (min === 0) continue
+			return null
+		}
+		const picks = ctx.ask(chooser, { key: `${keyPrefix}t${i}`, prompt: `${cardName(ctx.s, src.card)}: choose ${max > 1 ? (min === 0 ? `up to ${max} ` : `${min === max ? max : `${min}–${max}`} `) : min === 0 ? 'up to one ' : ''}${describeSpec(spec)}`, options: opts, min: Math.min(min, opts.length), max: Math.min(max, opts.length) })
+		for (const pick of picks) {
+			const t: Target = { ...parseTargetId(pick), spec: i }
+			if (t.kind === 'perm') t.ctl = findPerm(ctx.s, t.id)?.controller
+			out.push(t)
+		}
 	}
 	return out
 }
@@ -113,6 +127,8 @@ export function describeSpec(spec: TargetSpec): string {
 	if (spec.kind === 'player') return spec.opponent ? 'target opponent' : 'target player'
 	if (spec.kind === 'creatureOrPlayer') return 'target creature or player'
 	if (spec.kind === 'spell') return 'target spell'
+	if (spec.kind === 'stackAny') return 'target spell or ability'
+	if (spec.kind === 'gyCard') return 'target card in a graveyard'
 	const f = spec.filter
 	return `target ${f.not.map((x) => 'non' + x + ' ').join('')}${f.types.join(' or ') || 'permanent'}${f.controller === 'opp' ? ' an opponent controls' : f.controller === 'you' ? ' you control' : ''}`
 }
@@ -134,23 +150,33 @@ const N = (n: number | 'x', x: number) => (n === 'x' ? x : n)
 export function runCompiled(ctx: Ctx, item: StackItem, compiled: Compiled, keyPrefix = 'e') {
 	const s = ctx.s
 	const me = item.controller
-	const x = item.x ?? 0
+	let x = item.x ?? 0
+	if (compiled.count === 'attackers') x = s.combat?.attackers.length ?? 0
+	else if (compiled.count === 'charge') x = findPerm(s, item.iid)?.counters.charge ?? 0
+	else if (compiled.count === 'lands') x = new Set(s.battlefield.filter((p) => p.controller === me && rulesOf(s, p).types.includes('land')).map((p) => cardName(s, p.card))).size
 	const src = { card: item.card, controller: me, iid: item.iid }
-	const legal = compiled.targets.map((spec, i) => (item.targets[i] ? stillLegal(s, spec, item.targets[i], me, src) : false))
+	const specOf = (t: Target, j: number) => t.spec ?? j
+	const legalT = item.targets.map((t, j) => {
+		const spec = compiled.targets[specOf(t, j)]
+		return !!spec && stillLegal(s, spec, t, me, src)
+	})
+	const legal = compiled.targets.map((_, i) => item.targets.some((t, j) => specOf(t, j) === i && legalT[j]))
+	/** All still-legal targets chosen for target phrase i. */
+	const tall = (i: number): Target[] => item.targets.filter((t, j) => specOf(t, j) === i && legalT[j])
+	const tperms = (i: number): Perm[] => tall(i).flatMap((t) => (t.kind === 'perm' ? [findPerm(s, t.id)].filter((p): p is Perm => !!p) : []))
+	if (compiled.ifKicked && !(findPerm(s, item.iid)?.kicked)) return
 	if (compiled.optional) {
 		const [yn] = ctx.ask(me, { key: `${keyPrefix}opt`, prompt: `${cardName(s, item.card)}: use this ability?`, options: [{ id: 'yes', label: 'Yes', score: 1 }, { id: 'no', label: 'No' }], min: 1, max: 1 })
 		if (yn === 'no') return
 	}
-	const tgt = (i: number): Target | null => (legal[i] ? item.targets[i] : null)
-	const tperm = (i: number) => {
-		const t = tgt(i)
-		return t && t.kind === 'perm' ? findPerm(s, t.id) : undefined
-	}
+	const tgt = (i: number): Target | null => tall(i)[0] ?? null
+	const tperm = (i: number) => tperms(i)[0]
 	const targetPlayer = () => {
 		const i = compiled.targets.findIndex((sp) => sp.kind === 'player')
 		const t = i >= 0 ? tgt(i) : null
 		return t ? t.id : null
 	}
+	const lastController = compiled.targets.length ? tperms(compiled.targets.length - 1)[0]?.controller ?? lastCtl(item, s) : undefined
 	compiled.effects.forEach((e, ei) => {
 		const k = `${keyPrefix}${ei}`
 		switch (e.e) {
@@ -186,24 +212,126 @@ export function runCompiled(ctx: Ctx, item: StackItem, compiled: Compiled, keyPr
 				}
 				break
 			}
-			case 'destroy': {
-				const p = tperm(e.t)
-				if (p) H().destroy(s, p.iid)
+			case 'destroy':
+				for (const p of tperms(e.t)) H().destroy(s, p.iid)
+				break
+			case 'exile':
+				for (const p of tperms(e.t)) H().move(s, p.iid, 'exile')
+				break
+			case 'bounce':
+				for (const p of tperms(e.t)) H().move(s, p.iid, 'hand')
+				break
+			case 'tap':
+				for (const p of tperms(e.t)) H().setTapped(s, p, !e.untap)
+				break
+			case 'tapAll':
+				for (const p of s.battlefield.filter((p) => matches(s, e.filter, p, me, p.controller, item.iid, p))) H().setTapped(s, p, !e.untap)
+				break
+			case 'tokenForController': {
+				const p = tperm(e.t) ?? (item.targets[0] ? undefined : undefined)
+				const who = p?.controller ?? lastController
+				if (who === undefined) break
+				const card = H().makeTokenDef(s, { e: 'token', n: 1, name: e.name, power: e.power, toughness: e.toughness, types: e.types, colors: e.colors, keywords: [] }, 0)
+				H().createToken(s, who, card, 1)
 				break
 			}
-			case 'exile': {
-				const p = tperm(e.t)
-				if (p) H().move(s, p.iid, 'exile')
+			case 'investigate': {
+				const card = H().makeTokenDef(s, { e: 'token', n: e.n, name: 'Clue', types: 'Artifact — Clue', colors: [], keywords: [], artifact: true }, 0)
+				H().createToken(s, me, card, e.n)
 				break
 			}
-			case 'bounce': {
-				const p = tperm(e.t)
-				if (p) H().move(s, p.iid, 'hand')
+			case 'explore': {
+				const p = findPerm(s, item.iid)
+				const top = s.players[me].library[0]
+				if (!top) break
+				log(s, `${p ? permName(s, p) : 'It'} explores: ${cardName(s, top.card)}.`)
+				if (rulesOf(s, top).types.includes('land')) H().move(s, top.iid, 'hand')
+				else {
+					if (p) p.counters['+1/+1'] = (p.counters['+1/+1'] ?? 0) + 1
+					const [c] = ctx.ask(me, { key: k, prompt: `Explore: keep ${cardName(s, top.card)} on top, or put it into your graveyard?`, options: [{ id: 'keep', label: 'Keep on top', card: top.card, score: def(s, top.card).cmc <= 4 ? 1 : 0 }, { id: 'gy', label: 'Graveyard', score: 0.5 }], min: 1, max: 1 })
+					if (c === 'gy') H().move(s, top.iid, 'graveyard')
+				}
 				break
 			}
-			case 'tap': {
-				const p = tperm(e.t)
-				if (p) p.tapped = !e.untap
+			case 'discover':
+				H().discover(ctx, me, e.n, k)
+				break
+			case 'copyToken': {
+				const p = e.t === 'self' ? findPerm(s, item.iid) : tperm(e.t)
+				if (!p) break
+				const [made] = H().createToken(s, me, p.card, 1)
+				const t = findPerm(s, made)
+				if (t && e.haste) t.mods.push({ power: 0, toughness: 0, keywords: ['haste'], until: 'perm' })
+				if (t && e.exileAtEnd) H().later(s, { at: 'end', kind: 'exile', iid: made })
+				break
+			}
+			case 'flicker':
+				for (const p of tperms(e.t)) {
+					const owner = p.owner
+					const iid = p.iid
+					H().move(s, iid, 'exile')
+					if (e.later) H().later(s, { at: 'end', kind: 'return', iid, owner })
+					else H().move(s, iid, 'battlefield', { controller: owner })
+				}
+				break
+			case 'addMana': {
+				const cols = s.players[me].identity.length ? s.players[me].identity : (['W', 'U', 'B', 'R', 'G'] as const)
+				const [c] = ctx.ask(me, { key: k, prompt: 'Add one mana of which colour?', options: cols.map((m) => ({ id: m, label: m, score: 1 })), min: 1, max: 1 })
+				s.players[me].pool[c as 'W'] += e.n
+				if (s.players[me].floating === undefined || s.players[me].floating < e.n) s.players[me].floating = (s.players[me].floating ?? 0) + e.n
+				break
+			}
+			case 'gainControl':
+				for (const p of tperms(e.t)) {
+					const was = p.controller
+					p.controller = me
+					p.sick = true
+					if (e.untap) p.tapped = false
+					if (e.eot) H().later(s, { at: 'cleanup', kind: 'control', iid: p.iid, owner: was })
+					log(s, `${s.players[me].name} gains control of ${permName(s, p)}${e.eot ? ' until end of turn' : ''}.`)
+				}
+				break
+			case 'cantBlock': {
+				const ps = e.t === 'self' ? [findPerm(s, item.iid)].filter((p): p is Perm => !!p) : tperms(e.t)
+				for (const p of ps) p.mods.push({ power: 0, toughness: 0, keywords: ['cantblock'], until: 'eot' })
+				break
+			}
+			case 'endCombat':
+				if (s.combat) {
+					s.combat.attackers = []
+					s.combat.blocks = []
+					log(s, 'Combat ends.')
+				}
+				break
+			case 'protectionChoice': {
+				const names = ['white', 'blue', 'black', 'red', 'green']
+				const [c] = ctx.ask(me, { key: k, prompt: 'Protection from which colour?', options: names.map((n) => ({ id: n, label: n, score: s.battlefield.some((p) => p.controller !== me && def(s, p.card).colors.includes(({ white: 'W', blue: 'U', black: 'B', red: 'R', green: 'G' } as Record<string, string>)[n] as 'W')) ? 1 : 0 })), min: 1, max: 1 })
+				for (const p of s.battlefield.filter((p) => matches(s, e.filter, p, me, p.controller, item.iid, p))) p.mods.push({ power: 0, toughness: 0, keywords: [`protection from ${c}`], until: 'eot' })
+				break
+			}
+			case 'goad': {
+				const ps = e.t === 'allOpp' ? s.battlefield.filter((p) => p.controller !== me && isCreature(s, p)) : tperms(e.t)
+				for (const p of ps) p.mods.push({ power: 0, toughness: 0, keywords: ['goaded'], until: 'turn', expires: s.turn + 2 })
+				if (ps.length) log(s, `${ps.map((p) => permName(s, p)).join(', ')} ${ps.length > 1 ? 'are' : 'is'} goaded.`)
+				break
+			}
+			case 'assimilate':
+				for (const p of tperms(e.t)) {
+					p.controller = me
+					p.sick = true
+					p.counters['+1/+1'] = (p.counters['+1/+1'] ?? 0) + 1
+					p.addTypes = ['artifact', 'creature']
+					log(s, `${s.players[me].name} assimilates ${permName(s, p)}.`)
+				}
+				break
+			case 'fight': {
+				const a = e.a === 'self' ? findPerm(s, item.iid) : tperm(e.a)
+				const b = tperm(e.b)
+				if (!a || !b) break
+				const [ap] = pt(s, a)
+				const [bp] = pt(s, b)
+				H().damage(s, { card: a.card, controller: a.controller, iid: a.iid }, { kind: 'perm', id: b.iid }, ap)
+				H().damage(s, { card: b.card, controller: b.controller, iid: b.iid }, { kind: 'perm', id: a.iid }, bp)
 				break
 			}
 			case 'destroyAll':
@@ -216,11 +344,9 @@ export function runCompiled(ctx: Ctx, item: StackItem, compiled: Compiled, keyPr
 				}
 				break
 			}
-			case 'damage': {
-				const t = tgt(e.t)
-				if (t) H().damage(s, src, t, N(e.n, x))
+			case 'damage':
+				for (const t of tall(e.t)) H().damage(s, src, t, N(e.n, x))
 				break
-			}
 			case 'damageEach': {
 				const n = N(e.n, x)
 				if (e.filter) for (const p of s.battlefield.filter((p) => matches(s, e.filter!, p, me, p.controller, item.iid, p))) H().damage(s, src, { kind: 'perm', id: p.iid }, n)
@@ -231,7 +357,10 @@ export function runCompiled(ctx: Ctx, item: StackItem, compiled: Compiled, keyPr
 				const t = tgt(e.t)
 				if (t && t.kind === 'stack') {
 					const it = s.stack.find((z) => z.sid === t.id)
-					if (it && rulesOf(s, { card: it.card }).canBeCountered) {
+					if (it && it.kind !== 'spell') {
+						s.stack = s.stack.filter((z) => z.sid !== t.id)
+						log(s, `${cardName(s, it.card)}'s ability is countered.`)
+					} else if (it && rulesOf(s, { card: it.card }).canBeCountered) {
 						if (it.obj && !it.copy) H().move(s, it.obj.iid, 'graveyard')
 						else s.stack = s.stack.filter((z) => z.sid !== t.id)
 						log(s, `${cardName(s, it.card)} is countered.`)
@@ -241,7 +370,8 @@ export function runCompiled(ctx: Ctx, item: StackItem, compiled: Compiled, keyPr
 			}
 			case 'token': {
 				const card = H().makeTokenDef(s, e, x)
-				H().createToken(s, me, card, N(e.n, x), e.tapped)
+				const made = H().createToken(s, me, card, N(e.n, x), e.tapped)
+				if (e.attacking && s.combat) for (const iid of made) s.combat.attackers.push({ iid, defender: opp(me) })
 				break
 			}
 			case 'counters': {
@@ -253,15 +383,12 @@ export function runCompiled(ctx: Ctx, item: StackItem, compiled: Compiled, keyPr
 					const p = findPerm(s, item.iid)
 					if (p) put(p)
 				} else if (e.t === 'each') s.battlefield.filter((p) => matches(s, e.filter!, p, me, p.controller, item.iid, p)).forEach(put)
-				else {
-					const p = tperm(e.t)
-					if (p) put(p)
-				}
+				else tperms(e.t).forEach(put)
 				break
 			}
 			case 'pump': {
-				const p = e.t === 'self' ? findPerm(s, item.iid) : tperm(e.t)
-				if (p) p.mods.push({ power: e.p, toughness: e.tough, keywords: e.keywords, until: 'eot' })
+				const ps = e.t === 'self' ? [findPerm(s, item.iid)].filter((p): p is Perm => !!p) : tperms(e.t)
+				for (const p of ps) p.mods.push({ power: e.p, toughness: e.tough, keywords: e.keywords, until: 'eot' })
 				break
 			}
 			case 'pumpAll': {
@@ -320,6 +447,12 @@ export function runCompiled(ctx: Ctx, item: StackItem, compiled: Compiled, keyPr
 				break
 		}
 	})
+}
+
+/** The controller of the first permanent target, remembered at cast time (it may be gone by now). */
+function lastCtl(item: StackItem, s: GameState): number | undefined {
+	const t = item.targets.find((x) => x.kind === 'perm')
+	return t?.ctl ?? (t ? findPerm(s, t.id)?.controller : undefined)
 }
 
 export function search(ctx: Ctx, me: number, e: Extract<Effect, { e: 'search' }>, key: string) {

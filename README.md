@@ -31,16 +31,18 @@ graveyard, exile and command zone as piles; click a pile to look through it.
 
 ## What's automatic
 
-Turn structure, priority and the stack, mana and automatic land tapping (double-click a land to tap it by
-hand), casting with commander tax, the command zone, combat (flying, reach, trample, first/double strike,
-deathtouch, lifelink, vigilance, menace, haste…), Station for Spacecraft, Seek out and other
-"whenever you draw your second card" / "whenever you attack" abilities, state-based actions, the legend rule, equipment and
-anthems, and the most common card wordings ("Destroy target creature.", "Draw two cards.", "Create a
-Treasure token.", land searches, scry…).
+Like Arena, the game runs the rules for you: turn structure, priority and the stack (it only stops when
+you can actually respond), automatic land tapping, commander tax and the command zone, combat with all the
+usual keywords plus melee, battle cry and goad, state-based actions and the legend rule.
 
-Anything else — many of the new Star Trek cards — still goes on the stack, and when it resolves the game
-asks you to **do it by hand** with the table tools: counters, tokens, moving cards between zones, life,
-P/T changes, control, attaching and so on, like at a real table.
+Card text is read and played automatically for the large majority of the four decks: targets (including
+"up to" and multi-target choices), modal spells ("Choose one —"), Sagas, kicker/squad/multikicker,
+flashback, cycling, extra costs, Spacecraft Station, Seek out, Landfall, Battlefront, "whenever you cast",
+"whenever … dies", abilities that Equipment or other cards grant, token copies, flicker effects,
+assimilate, discover, explore, investigate, cost reductions and more, plus scripts for every commander.
+
+What's left (about a quarter of the cards have some rare wording, like copy effects or extra combats)
+still goes on the stack, and when it resolves the game asks you to do it by hand with the table tools.
 
 ## Playing a friend online
 
