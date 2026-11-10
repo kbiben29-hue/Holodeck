@@ -1,6 +1,7 @@
 import { useEffect, useMemo, useRef, useState, type MouseEvent, type ReactNode } from 'react'
 import { abilityProblem, canAttack, canBlock, canCast, canPlayLand, commanderTax, manaAbilitiesOf, spellCost, STEP_NAMES, tryApply } from '../engine/engine'
 import { costText } from '../engine/mana'
+import { useMotion } from './motion'
 import { cardName, def, findPerm, isCreature, keywords, opp, permName, pt, rulesOf } from '../engine/state'
 import type { CardDef, GameState, Intent, Mana, ManualOp, Obj, Perm, Step } from '../engine/types'
 import { CardBack, CardFaceView, Cost, Pip } from './Card'
@@ -63,6 +64,7 @@ export function Board(props: BoardProps) {
 	const [coachMin, setCoachMin] = useState(false)
 	const [muted, setMutedState] = useState(isMuted())
 	const boardRef = useRef<HTMLDivElement>(null)
+	useMotion(boardRef, s)
 	const [zoom, setZoom] = useState<{ iid: number; x: number; y: number } | null>(null)
 	/** Hovering a card: show it in the viewer and enlarged beside the pointer (table layout). */
 	const peek = (iid: number, e?: MouseEvent<HTMLDivElement>) => {
@@ -315,7 +317,7 @@ export function Board(props: BoardProps) {
 			<div className="piles">
 				<div className="pile" title="Library" onClick={() => setZone({ player: p, zone: 'library' })}>
 					<span className="pile-label">Library</span>
-					<div className="pile-card">
+					<div className="pile-card" data-anchor={`library-${p}`}>
 						{pl.library.length ? <CardBack /> : <div className="pile-empty" />}
 						{pl.library.length > 1 && <div className="pile-shadow" />}
 						<span className="pile-n">{pl.library.length}</span>
@@ -323,23 +325,23 @@ export function Board(props: BoardProps) {
 				</div>
 				<div className="pile" title="Graveyard — click to see it" onClick={() => setZone({ player: p, zone: 'graveyard' })} onMouseEnter={(e) => topGy && peek(topGy.iid, e)} onMouseLeave={unpeek}>
 					<span className="pile-label">Graveyard</span>
-					<div className="pile-card">
+					<div className="pile-card" data-anchor={`graveyard-${p}`}>
 						{topGy ? <CardFaceView def={def(s, topGy.card)} /> : <div className="pile-empty" />}
 						<span className="pile-n">{pl.graveyard.length}</span>
 					</div>
 				</div>
 				<div className="pile" title="Exile — click to see it" onClick={() => setZone({ player: p, zone: 'exile' })} onMouseEnter={(e) => topEx && peek(topEx.iid, e)} onMouseLeave={unpeek}>
 					<span className="pile-label">Exile</span>
-					<div className="pile-card">
+					<div className="pile-card" data-anchor={`exile-${p}`}>
 						{topEx ? <CardFaceView def={def(s, topEx.card)} /> : <div className="pile-empty" />}
 						<span className="pile-n">{pl.exile.length}</span>
 					</div>
 				</div>
 				<div className="pile cmdpile" title="Command zone">
 					<span className="pile-label">Command{pl.command.some((o) => pl.commanderCasts[o.card]) ? ` +${commanderTax(s, p, pl.command[0]?.card ?? '')}` : ''}</span>
-					<div className="pile-card">
+					<div className="pile-card" data-anchor={`command-${p}`}>
 						{pl.command.length ? (
-							pl.command.map((o) => <CardFaceView key={o.iid} def={def(s, o.card)} className={`${sel?.iid === o.iid ? 'sel' : ''} ${isMe && playable(s, me, o) ? 'playable' : ''} ${hHand.has(o.iid) ? 'hint' : ''}`} onClick={(e) => (e.stopPropagation(), clickCard(o))} onMouseEnter={(e) => peek(o.iid, e)} onMouseLeave={unpeek} />)
+							pl.command.map((o) => <CardFaceView key={o.iid} iid={o.iid} def={def(s, o.card)} className={`${sel?.iid === o.iid ? 'sel' : ''} ${isMe && playable(s, me, o) ? 'playable' : ''} ${hHand.has(o.iid) ? 'hint' : ''}`} onClick={(e) => (e.stopPropagation(), clickCard(o))} onMouseEnter={(e) => peek(o.iid, e)} onMouseLeave={unpeek} />)
 						) : (
 							<div className="pile-empty" />
 						)}
@@ -358,6 +360,7 @@ export function Board(props: BoardProps) {
 				) : (
 					<CardFaceView
 						key={o.iid}
+						iid={o.iid}
 						def={def(s, o.card)}
 						className={`${sel?.iid === o.iid ? 'sel' : ''} ${playable(s, me, o) ? 'playable' : ''} ${hHand.has(o.iid) ? 'hint' : ''}`}
 						style={layout === 'console' ? { zIndex: i } : undefined}
@@ -385,7 +388,7 @@ export function Board(props: BoardProps) {
 					<button className="mini" onClick={() => tool({ op: 'life', player: p, delta: -1 })}>
 						−
 					</button>
-					<b>{pl.life}</b>
+					<b data-life={p}>{pl.life}</b>
 					<button className="mini" onClick={() => tool({ op: 'life', player: p, delta: 1 })}>
 						+
 					</button>
@@ -397,19 +400,19 @@ export function Board(props: BoardProps) {
 					</span>
 				))}
 				<span className="zones">
-					<span className="zone" title="Cards in hand">
+					<span className="zone" title="Cards in hand" data-anchor={`hand-${p}`}>
 						✋ {pl.hand.length}
 					</span>
 					{layout === 'pocket' && (
 						<>
-							<button className="zone" title="Library" onClick={() => setZone({ player: p, zone: 'library' })}>
+							<button className="zone" title="Library" data-anchor={`library-${p}`} onClick={() => setZone({ player: p, zone: 'library' })}>
 								📚 {pl.library.length}
 							</button>
-							<button className="zone" title="Graveyard" onClick={() => setZone({ player: p, zone: 'graveyard' })}>
+							<button className="zone" title="Graveyard" data-anchor={`graveyard-${p}`} onClick={() => setZone({ player: p, zone: 'graveyard' })}>
 								⚰ {pl.graveyard.length}
 							</button>
 							{pl.exile.length > 0 && (
-								<button className="zone" title="Exile" onClick={() => setZone({ player: p, zone: 'exile' })}>
+								<button className="zone" title="Exile" data-anchor={`exile-${p}`} onClick={() => setZone({ player: p, zone: 'exile' })}>
 									⊘ {pl.exile.length}
 								</button>
 							)}
@@ -417,9 +420,9 @@ export function Board(props: BoardProps) {
 					)}
 				</span>
 				{layout === 'pocket' && (
-					<span className="command">
+					<span className="command" data-anchor={`command-${p}`}>
 						{pl.command.map((o) => (
-							<CardFaceView key={o.iid} def={def(s, o.card)} className={`cmdcard ${sel?.iid === o.iid ? 'sel' : ''} ${isMe && playable(s, me, o) ? 'playable' : ''} ${hHand.has(o.iid) ? 'hint' : ''}`} onClick={() => clickCard(o)} />
+							<CardFaceView key={o.iid} iid={o.iid} def={def(s, o.card)} className={`cmdcard ${sel?.iid === o.iid ? 'sel' : ''} ${isMe && playable(s, me, o) ? 'playable' : ''} ${hHand.has(o.iid) ? 'hint' : ''}`} onClick={() => clickCard(o)} />
 						))}
 					</span>
 				)}
@@ -443,7 +446,7 @@ export function Board(props: BoardProps) {
 						.slice()
 						.reverse()
 						.map((it, i) => (
-							<div key={it.sid} className={`stack-item ${i === 0 ? 'top' : ''} ${it.controller === me ? 'mine' : 'theirs'}`} onMouseEnter={(e) => peek(it.obj?.iid ?? it.iid, e)} onMouseLeave={unpeek} title={it.text}>
+							<div key={it.sid} data-iid={it.obj?.iid} className={`stack-item ${i === 0 ? 'top' : ''} ${it.controller === me ? 'mine' : 'theirs'}`} onMouseEnter={(e) => peek(it.obj?.iid ?? it.iid, e)} onMouseLeave={unpeek} title={it.text}>
 								<CardFaceView def={def(s, it.card)} />
 								<span className="si-text">
 									<b>{it.kind === 'spell' ? cardName(s, it.card) : `${cardName(s, it.card)} — ${it.kind === 'trigger' ? 'trigger' : 'ability'}`}</b>
@@ -548,7 +551,7 @@ export function Board(props: BoardProps) {
 
 	if (layout === 'pocket')
 		return (
-			<div className="pocket" onClick={() => setHover(null)} onPointerDown={unlockAudio}>
+			<div className="pocket" ref={boardRef} onClick={() => setHover(null)} onPointerDown={unlockAudio}>
 				{props.coach &&
 					(coachMin ? (
 						<button className="p-coach-pill" onClick={() => setCoachMin(false)}>

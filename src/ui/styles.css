@@ -2038,3 +2038,72 @@ button.mini {
 	padding: 6px 12px;
 	font-size: 14px;
 }
+
+/* ───────── motion (src/ui/motion.ts) ───────── */
+.board,
+.pocket {
+	position: relative;
+}
+.fx-layer {
+	position: absolute;
+	inset: 0;
+	pointer-events: none;
+	z-index: 400;
+	overflow: hidden;
+}
+.fx-ghost {
+	position: absolute;
+	margin: 0;
+	pointer-events: none;
+	box-shadow: 0 8px 24px rgba(0, 0, 0, 0.6);
+	border-radius: 6px;
+}
+.fx-num {
+	position: absolute;
+	font-family: 'Cinzel', Georgia, serif;
+	font-weight: 900;
+	font-size: 34px;
+	line-height: 1;
+	white-space: nowrap;
+	-webkit-text-stroke: 1.5px rgba(0, 0, 0, 0.85);
+	text-shadow: 0 2px 10px rgba(0, 0, 0, 0.8);
+}
+.pocket .fx-num {
+	font-size: 22px;
+}
+.fx-num.hurt {
+	color: #ff5a4e;
+}
+.fx-num.heal {
+	color: #7dffa0;
+}
+.fx-num.buff {
+	color: #ffd75e;
+	font-size: 24px;
+}
+.stack-item {
+	animation: stack-in 0.32s cubic-bezier(0.2, 0.8, 0.2, 1);
+}
+@keyframes stack-in {
+	from {
+		opacity: 0;
+		transform: scale(0.7);
+	}
+}
+.cardface.attacking {
+	animation: ready-glow 1.2s ease-in-out infinite alternate;
+}
+@keyframes ready-glow {
+	to {
+		box-shadow: 0 0 0 3px var(--red), 0 0 28px 6px var(--red);
+	}
+}
+.pile-card .cardback {
+	transition: transform 0.2s;
+}
+@media (prefers-reduced-motion: reduce) {
+	.stack-item,
+	.cardface.attacking {
+		animation: none;
+	}
+}
