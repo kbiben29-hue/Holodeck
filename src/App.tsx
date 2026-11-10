@@ -64,18 +64,48 @@ function readLayout(): LayoutChoice {
 		return 'auto'
 	}
 }
-/** Phones get the touch layout; computers and iPads the table, scaled to fit (both can be switched in the menu). */
+/** Phones get the touch layout; tablets get it held upright and the table held sideways; computers the table, scaled to fit (all can be switched in the menu). */
+/** A finger-driven screen (or ?touch=1 to try the touch sizing with a mouse). */
+const isTouch = () => typeof window !== 'undefined' && (!!window.matchMedia?.('(pointer: coarse)').matches || /[?&]touch=1/.test(window.location.search))
+if (typeof document !== 'undefined' && isTouch()) document.documentElement.classList.add('touch')
+/** A touch screen at least 600px each way (iPad, Android tablets). */
+const isTablet = () => isTouch() && Math.min(window.innerWidth, window.innerHeight) >= 600
+const isPortrait = () => typeof window !== 'undefined' && window.innerHeight > window.innerWidth
+/** Space the home indicator / notch takes (viewport-fit=cover). */
+function safeInsets() {
+	const d = document.createElement('div')
+	d.style.cssText = 'position:fixed;visibility:hidden;padding:env(safe-area-inset-top) env(safe-area-inset-right) env(safe-area-inset-bottom) env(safe-area-inset-left)'
+	document.body.appendChild(d)
+	const c = getComputedStyle(d)
+	const v = { t: parseFloat(c.paddingTop) || 0, r: parseFloat(c.paddingRight) || 0, b: parseFloat(c.paddingBottom) || 0, l: parseFloat(c.paddingLeft) || 0 }
+	d.remove()
+	return v
+}
 const isPhone = () => typeof window !== 'undefined' && !!window.matchMedia?.('(pointer: coarse)').matches && Math.min(window.innerWidth, window.innerHeight) < 600
 
 function useFit() {
-	const [scale, setScale] = useState(1)
+	const [fit, setFit] = useState({ scale: 1, left: 0, top: 0 })
 	useLayoutEffect(() => {
-		const fit = () => setScale(Math.min(window.innerWidth / W, window.innerHeight / H))
-		fit()
-		window.addEventListener('resize', fit)
-		return () => window.removeEventListener('resize', fit)
+		const go = () => {
+			const ins = safeInsets()
+			const vw = window.visualViewport?.width ?? window.innerWidth
+			const vh = window.visualViewport?.height ?? window.innerHeight
+			const w = vw - ins.l - ins.r
+			const h = vh - ins.t - ins.b
+			const scale = Math.min(w / W, h / H)
+			setFit({ scale, left: ins.l + (w - W * scale) / 2, top: ins.t + (h - H * scale) / 2 })
+		}
+		go()
+		window.addEventListener('resize', go)
+		window.addEventListener('orientationchange', go)
+		window.visualViewport?.addEventListener('resize', go)
+		return () => {
+			window.removeEventListener('resize', go)
+			window.removeEventListener('orientationchange', go)
+			window.visualViewport?.removeEventListener('resize', go)
+		}
 	}, [])
-	return scale
+	return fit
 }
 
 function saveSession(s: Session) {
@@ -106,7 +136,9 @@ export default function App() {
 	const [viewer, setViewer] = useState(0)
 	const [handoff, setHandoff] = useState<number | null>(null)
 	const [layoutChoice, setLayoutChoice] = useState<LayoutChoice>(() => readLayout())
-	const pocket = layoutChoice === 'pocket' || (layoutChoice === 'auto' && isPhone())
+	// phones always use the touch layout; tablets use it held upright and the full table held sideways
+	const tablet = isTablet()
+	const pocket = layoutChoice === 'pocket' || (layoutChoice === 'auto' && (isPhone() || (tablet && isPortrait())))
 	const [lobby, setLobby] = useState<Lobby | null>(null)
 	const [net, setNet] = useState<{ ok: boolean; text: string } | null>(null)
 	const [netError, setNetError] = useState<string | null>(null)
@@ -513,6 +545,7 @@ export default function App() {
 						setLessonsOpen(false)
 					}}
 					layout={pocket ? 'pocket' : 'console'}
+					tablet={tablet}
 					layoutChoice={layoutChoice}
 					onLayout={chooseLayout}
 					hint={hint}
@@ -549,7 +582,7 @@ export default function App() {
 
 	return (
 		<div className="viewport">
-			<div className="stage" style={{ width: W, height: H, transform: `scale(${scale})`, left: (window.innerWidth - W * scale) / 2, top: (window.innerHeight - H * scale) / 2 }}>
+			<div className="stage" style={{ width: W, height: H, transform: `scale(${scale.scale})`, left: scale.left, top: scale.top }}>
 				{body}
 			</div>
 		</div>

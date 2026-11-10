@@ -2197,3 +2197,158 @@ button.mini {
 		animation: none;
 	}
 }
+
+/* ───────── touch screens and tablets (iPad) ───────── */
+.board,
+.pocket {
+	-webkit-user-select: none;
+	user-select: none;
+	-webkit-touch-callout: none;
+	touch-action: manipulation;
+}
+html,
+body {
+	touch-action: manipulation;
+}
+.cardface img {
+	-webkit-touch-callout: none;
+	pointer-events: none;
+}
+@media (hover: none) {
+	/* no sticky hover lifts after a tap */
+	.hand.m .cardface:hover,
+	.board .hand.m .cardface:hover {
+		transform: none;
+	}
+	button:hover {
+		filter: none;
+	}
+}
+/* fingers: bigger targets on the scaled table (stage pixels, ~0.7× on an iPad held sideways) */
+.touch .board button {
+	min-height: 44px;
+	padding: 8px 18px;
+	font-size: 17px;
+}
+.touch .board button.mini {
+	min-width: 40px;
+	min-height: 40px;
+	padding: 0 10px;
+}
+.touch .board .prompt .pbtns button {
+	min-height: 52px;
+	padding: 10px 24px;
+	font-size: 19px;
+}
+.touch .board .actions button {
+	min-height: 46px;
+}
+.touch .board .ph {
+	padding: 6px 10px;
+}
+.zoom.zoom-center {
+	position: fixed;
+	left: 50%;
+	top: 45%;
+	translate: -50% -50%;
+	z-index: 600;
+}
+.zoom.zoom-center .cardface.big {
+	width: min(72vw, 340px);
+	height: calc(min(72vw, 340px) * 1.395);
+}
+
+/* iPad held upright: the touch layout with room to breathe */
+.pocket.tablet {
+	--card-w: 76px;
+	--card-h: 106px;
+	padding: env(safe-area-inset-top) 10px env(safe-area-inset-bottom);
+	gap: 8px;
+	font-size: 16px;
+}
+.pocket.tablet .pbar {
+	height: 54px;
+	font-size: 16px;
+	gap: 10px;
+}
+.pocket.tablet .pbar .pname {
+	font-size: 18px;
+}
+.pocket.tablet .life b {
+	font-size: 30px;
+	min-width: 40px;
+}
+.pocket.tablet .life .mini {
+	display: inline-block;
+	min-width: 36px;
+	min-height: 36px;
+}
+.pocket.tablet .zone {
+	font-size: 15px;
+	padding: 6px 10px;
+}
+.pocket.tablet .cmdcard {
+	--card-w: 40px;
+	--card-h: 56px;
+}
+.pocket.tablet .row {
+	min-height: 112px;
+	gap: 8px;
+	padding: 4px;
+}
+.pocket.tablet .row.lower {
+	min-height: 108px;
+	gap: 12px;
+}
+.pocket.tablet .ptbox {
+	font-size: 15px;
+	padding: 1px 5px;
+}
+.pocket.tablet .badge {
+	font-size: 11px;
+}
+.pocket.tablet .ph {
+	font-size: 14px;
+	padding: 4px 10px;
+}
+.pocket.tablet .ptext {
+	font-size: 17px;
+}
+.pocket.tablet .pbtns button {
+	font-size: 17px;
+	padding: 12px 22px;
+	min-height: 48px;
+}
+.pocket.tablet .stack-item .si-text {
+	font-size: 15px;
+}
+.pocket.tablet .hand .cardface {
+	--card-w: 104px;
+	--card-h: 145px;
+}
+.pocket.tablet .menu-btn {
+	font-size: 24px;
+	padding: 10px 18px;
+}
+.pocket.tablet .sheet .cardface.big {
+	width: 300px;
+	height: 418px;
+}
+.pocket.tablet .sheet {
+	max-width: 640px;
+	margin: 0 auto;
+}
+.pocket.tablet .modal {
+	width: min(92vw, 760px);
+}
+.pocket.tablet .cardgrid .cardface,
+.pocket.tablet .qpanel .cardgrid .cardface {
+	--card-w: 120px;
+	--card-h: 167px;
+}
+.pocket.tablet .opt-card {
+	width: 120px;
+}
+.pocket.tablet .fx-num {
+	font-size: 30px;
+}

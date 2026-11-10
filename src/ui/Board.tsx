@@ -1,4 +1,4 @@
-import { useEffect, useMemo, useRef, useState, type MouseEvent, type ReactNode } from 'react'
+import { useEffect, useMemo, useRef, useState, type MouseEvent, type PointerEvent, type ReactNode } from 'react'
 import { abilityProblem, canAttack, canBlock, canCast, canPlayLand, commanderTax, manaAbilitiesOf, spellCost, STEP_NAMES, tryApply } from '../engine/engine'
 import { costText } from '../engine/mana'
 import { useMotion } from './motion'
@@ -33,6 +33,8 @@ export interface BoardProps {
 	onSkip?: () => void
 	pace?: Pace
 	onPace?: (p: Pace) => void
+	/** Phone layout on a tablet (iPad in portrait): bigger cards and buttons. */
+	tablet?: boolean
 }
 
 /** Does a button label match one of the hinted labels? */
@@ -76,18 +78,90 @@ export function Board(props: BoardProps) {
 	/** Hovering a card: show it in the viewer and enlarged beside the pointer (table layout). */
 	const peek = (iid: number, e?: MouseEvent<HTMLDivElement>) => {
 		setHover(iid)
+		// touch screens send mouse events on tap too: there, a long press enlarges the card instead
+		if (!e || touchy.current) return
+		zoomAt(iid, e.currentTarget.getBoundingClientRect())
+	}
+	/** Pointer type of the latest press ('touch' / 'pen' on an iPad). */
+	const touchy = useRef(typeof matchMedia === 'function' && matchMedia('(hover: none)').matches)
+	const zoomAt = (iid: number, r: DOMRect) => {
 		const b = boardRef.current
-		if (!e || !b || layout !== 'console') return
+		if (!b) return
+		if (layout !== 'console') return setZoom({ iid, x: 0, y: 0 })
 		const br = b.getBoundingClientRect()
 		const k = br.width / 1600 || 1
-		const r = e.currentTarget.getBoundingClientRect()
 		const cx = (r.left + r.width / 2 - br.left) / k
 		const cy = (r.top + r.height / 2 - br.top) / k
 		const x = Math.max(4, Math.min(1600 - 284, cx - 140))
 		const y = Math.max(4, Math.min(1000 - 394, cy - 195))
 		setZoom({ iid, x, y })
 	}
-	const unpeek = () => setZoom(null)
+	const unpeek = () => {
+		if (!touchy.current) setZoom(null)
+	}
+	// ── touch: long press = enlarge the card while held; drop a blocker on an attacker; double tap a land ──
+	const press = useRef<{ timer: number; x: number; y: number; shown: boolean } | null>(null)
+	const swallowClick = useRef(false)
+	const downIid = useRef<number | null>(null)
+	const touchHandlers = {
+		onPointerDownCapture: (e: PointerEvent<HTMLDivElement>) => {
+			touchy.current = e.pointerType !== 'mouse'
+			if (!touchy.current) return
+			const el = (e.target as HTMLElement).closest<HTMLElement>('[data-iid]')
+			downIid.current = el ? Number(el.dataset.iid) : null
+			if (press.current) window.clearTimeout(press.current.timer)
+			press.current = null
+			if (!el || props.busy) return
+			const iid = Number(el.dataset.iid)
+			const p = { x: e.clientX, y: e.clientY, shown: false, timer: 0 }
+			p.timer = window.setTimeout(() => {
+				p.shown = true
+				setHover(iid)
+				zoomAt(iid, ((el.querySelector('.cardface') as HTMLElement | null) ?? el).getBoundingClientRect())
+			}, 380)
+			press.current = p
+		},
+		onPointerMove: (e: PointerEvent<HTMLDivElement>) => {
+			const p = press.current
+			if (p && !p.shown && Math.hypot(e.clientX - p.x, e.clientY - p.y) > 10) {
+				window.clearTimeout(p.timer)
+				press.current = null
+			}
+		},
+		onPointerUp: (e: PointerEvent<HTMLDivElement>) => {
+			const p = press.current
+			press.current = null
+			if (p) {
+				window.clearTimeout(p.timer)
+				if (p.shown) {
+					setZoom(null)
+					swallowClick.current = true
+					return
+				}
+			}
+			// a finger lifted somewhere else than it went down: dropping a blocker onto an attacker
+			if (e.pointerType !== 'mouse' && blockFrom !== null) {
+				const under = document.elementFromPoint(e.clientX, e.clientY)?.closest<HTMLElement>('[data-iid]')
+				const q = under ? findPerm(s, Number(under.dataset.iid)) : undefined
+				if (q && q.iid !== blockFrom && q.iid !== downIid.current && assignBlock(q)) swallowClick.current = true
+			}
+		},
+		onPointerCancel: () => {
+			if (press.current) window.clearTimeout(press.current.timer)
+			if (press.current?.shown) setZoom(null)
+			press.current = null
+		},
+		onClickCapture: (e: MouseEvent<HTMLDivElement>) => {
+			if (!swallowClick.current) return
+			swallowClick.current = false
+			e.stopPropagation()
+			e.preventDefault()
+		},
+		onContextMenu: (e: MouseEvent<HTMLDivElement>) => {
+			if (touchy.current) e.preventDefault()
+		},
+	}
+	const lastTap = useRef<{ iid: number; at: number } | null>(null)
 	useEffect(() => setZoom(null), [s.log.length, s.pending.kind])
 	const H = props.hint
 	const hb = (label: string) => (hintMatch(H, label) ? 'hint' : '')
@@ -163,6 +237,12 @@ export function Board(props: BoardProps) {
 		return o ? o.id : null
 	}
 	const clickPerm = (p: Perm) => {
+		if (touchy.current && pend.kind !== 'blockers' && pend.kind !== 'attackers') {
+			const now = performance.now()
+			const twice = lastTap.current?.iid === p.iid && now - lastTap.current.at < 330
+			lastTap.current = twice ? null : { iid: p.iid, at: now }
+			if (twice && p.controller === me) return dbl(p)
+		}
 		const pick = boardPick(p.iid)
 		if (pick && pend.kind === 'choose' && pend.question.max === 1) {
 			act({ type: 'choose', player: me, picks: [pick] })
@@ -577,7 +657,12 @@ export function Board(props: BoardProps) {
 
 	if (layout === 'pocket')
 		return (
-			<div className="pocket" ref={boardRef} onClick={() => setHover(null)} onPointerDown={unlockAudio}>
+			<div className={`pocket ${props.tablet ? 'tablet' : ''}`} ref={boardRef} onClick={() => setHover(null)} onPointerDown={unlockAudio} {...touchHandlers}>
+				{zoom && locateAny(s, zoom.iid) && !(props.hideHand && s.players[me].hand.some((o) => o.iid === zoom.iid)) && (
+					<div className="zoom zoom-center">
+						<CardFaceView def={def(s, locateAny(s, zoom.iid)!.obj.card)} back={(locateAny(s, zoom.iid)!.obj as Perm).flipped} className="big" />
+					</div>
+				)}
 				{props.coach &&
 					(coachMin ? (
 						<button className="p-coach-pill" onClick={() => setCoachMin(false)}>
@@ -627,7 +712,7 @@ export function Board(props: BoardProps) {
 		)
 
 	return (
-		<div className="board" ref={boardRef} onMouseLeave={() => (setHover(null), setZoom(null))} onPointerDown={unlockAudio}>
+		<div className="board" ref={boardRef} onMouseLeave={() => (setHover(null), setZoom(null))} onPointerDown={unlockAudio} {...touchHandlers}>
 			{zoom && locateAny(s, zoom.iid) && !(props.hideHand && s.players[me].hand.some((o) => o.iid === zoom.iid)) && (
 				<div className="zoom" style={{ left: zoom.x, top: zoom.y }}>
 					<CardFaceView def={def(s, locateAny(s, zoom.iid)!.obj.card)} back={(locateAny(s, zoom.iid)!.obj as Perm).flipped} className="big" />
