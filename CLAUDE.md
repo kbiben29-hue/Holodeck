@@ -22,7 +22,10 @@ npm run build
   read is "manual": it still uses the stack and the controller is asked to do it by hand.
 - `src/engine/effects.ts` — runs compiled effects. Tasks re-run from the start on each new answer
   (`ctx.ask` → NeedChoice → `pending: choose`), so code before an ask must not depend on hidden state.
-- `src/engine/named.ts` — scripts for specific cards (Swords, Path, Cultivate, Beast Within, Brainstorm).
+- `src/engine/named.ts` — scripts for specific cards (Swords, Path, Cultivate, Beast Within, Brainstorm) and
+  trigger overrides (`T`). `src/engine/scripts.ts` — more Star Trek card scripts: `trig` (add a trigger),
+  `act` (script an activated ability), `spell`, `done`; registries `CDA`, `GRANTS`, `BUFFS`, `COST_MODS` in state.ts.
+  Extra combats (`extraCombats`), rebound and `delayed` (end, cleanup, endCombat, upkeep) live in engine.ts.
 - `src/engine/mana.ts` — costs and the payment solver. `engine.ts` — flow, priority, combat, SBAs,
   commander rules, table tools. Smart stops: players auto-pass when they can't do anything (`wantsStop`).
 - `src/bot/bot.ts` — greedy "Ensign" bot. `src/data/decks.ts` — the four decklists (names only).
@@ -33,6 +36,8 @@ npm run build
   suggested move into a `Hint`). `src/ui/lessons.ts` — per-deck `PLANS`, `COMBOS` (alerts in coached games),
   `DRILLS` (built with `scenario`; `lessons.test.ts` solves each one). Lesson text is our own wording.
 - `src/ui/sfx.ts` — synthesized sounds (Web Audio), mute in the top bar.
+- `src/ui/motion.ts` — Arena-style motion: diffs `[data-iid]` elements between renders (FLIP moves, draws from
+  `data-anchor` piles, ghosts to the graveyard, lunges, floating damage/life numbers). Keep `data-iid` unique per card.
 - `src/ui/Board.tsx` — console (1600×1000 scaled) and pocket (phone) layouts; `src/App.tsx` — sessions,
   autosave, undo, bot loop, online host/guest. `src/config.ts` — repo/play URL.
 
