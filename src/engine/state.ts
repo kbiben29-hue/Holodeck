@@ -178,16 +178,28 @@ const num = (x: string | undefined) => {
 	return Number.isFinite(n) ? n : 0
 }
 
+/** Characteristic-defining power/toughness ("~'s power and toughness are each equal to …"), by card name. */
+export const CDA: Record<string, (s: GameState, p: Perm) => [number, number]> = {}
+
 export function basePT(s: GameState, p: Perm): [number, number] {
 	const d = def(s, p.card)
 	if (p.faceDown) return [2, 2]
+	const cda = CDA[d.name]
+	if (cda && !p.flipped) return cda(s, p)
 	const face = p.flipped && d.back ? d.back : d
 	return [num(face.power), num(face.toughness)]
 }
 
+/** Keyword-granting statics the parser can't read, by source card name: (state, source, creature) → keywords. */
+export const GRANTS: Record<string, (s: GameState, src: Perm, p: Perm) => string[]> = {}
+
 export function keywords(s: GameState, p: Perm): string[] {
 	const own = rulesOf(s, p)
 	const out = new Set(own.keywords)
+	for (const q of s.battlefield) {
+		const g = GRANTS[def(s, q.card).name]
+		if (g) for (const k of g(s, q, p)) out.add(k)
+	}
 	for (const t of own.thresholdKeywords ?? []) if (reached(p, t.n)) t.keywords.forEach((k) => out.add(k))
 	for (const m of p.mods) for (const k of m.keywords ?? []) out.add(k)
 	for (const q of s.battlefield) {

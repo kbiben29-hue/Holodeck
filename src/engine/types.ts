@@ -89,6 +89,10 @@ export interface Perm extends Obj {
 	addTypes?: string[]
 	/** Number of this turn's activations of each once-per-turn ability. */
 	used?: Record<string, number>
+	/** Turn it was last declared as an attacker. */
+	attackedTurn?: number
+	/** Exerted: skips its controller's next untap step. */
+	skipUntap?: boolean
 }
 
 export interface Target {
@@ -101,6 +105,10 @@ export interface Target {
 }
 
 export interface StackItem {
+	/** Cast from hand with rebound: exile it and cast it again next upkeep. */
+	rebound?: boolean
+	/** Triggers: the permanent or card that caused it (the creature that entered, the spell cast, …). */
+	about?: number
 	sid: number
 	kind: 'spell' | 'ability' | 'trigger'
 	controller: number
@@ -267,7 +275,11 @@ export interface GameState {
 	/** Number of free (land-or-not) state changes, to stop runaway loops. */
 	ticks: number
 	/** Things that happen later ("at the beginning of the next end step"). */
-	delayed?: { at: 'end' | 'cleanup'; kind: 'return' | 'exile' | 'control'; iid: number; owner?: number }[]
+	delayed?: { at: 'end' | 'cleanup' | 'endCombat' | 'upkeep'; kind: 'return' | 'exile' | 'control' | 'bottom' | 'rebound'; iid: number; owner?: number; draw?: boolean }[]
+	/** Additional combat phases still to come this turn (each followed by a main phase). */
+	extraCombats?: number
+	/** World at War: untap the creatures that attacked when that many of the extra combats begin. */
+	untapAtExtra?: number
 }
 
 export interface DeckList {

@@ -48,7 +48,7 @@ export interface EngineHooks {
 	gainLife(s: GameState, p: number, n: number): void
 	shuffle(s: GameState, p: number): void
 	setTapped(s: GameState, p: Perm, tapped: boolean): void
-	later(s: GameState, d: { at: 'end' | 'cleanup'; kind: 'return' | 'exile' | 'control'; iid: number; owner?: number }): void
+	later(s: GameState, d: NonNullable<GameState['delayed']>[number]): void
 	discover(ctx: Ctx, p: number, n: number, key: string): void
 }
 

@@ -174,7 +174,7 @@ export interface Activated {
 	loyalty?: boolean
 }
 
-export type TriggerEvent = 'etb' | 'attacks' | 'dies' | 'upkeep' | 'endStep' | 'beginCombat' | 'combatDamagePlayer' | 'landfall' | 'otherEtb' | 'ltb' | 'cast' | 'blocks' | 'secondDraw' | 'youAttack' | 'castSpell' | 'otherDies' | 'gainLife' | 'tapped' | 'teamDamage' | 'eachUpkeep' | 'eachEndStep' | 'yourDraw' | 'eachDraw'
+export type TriggerEvent = 'etb' | 'attacks' | 'dies' | 'upkeep' | 'endStep' | 'beginCombat' | 'combatDamagePlayer' | 'landfall' | 'otherEtb' | 'ltb' | 'cast' | 'blocks' | 'secondDraw' | 'youAttack' | 'castSpell' | 'otherDies' | 'gainLife' | 'tapped' | 'teamDamage' | 'eachUpkeep' | 'eachEndStep' | 'yourDraw' | 'eachDraw' | 'commanderEtb' | 'commanderAttacks' | 'goadedAttack'
 
 export interface Trigger {
 	threshold?: number
@@ -1021,6 +1021,18 @@ export function overrideTrigger(card: string, o: TriggerOverride) {
 	cache.clear()
 }
 
+/** Card scripts that adjust the parsed rules directly (add a trigger, script an activated ability, …). */
+const patches = new Map<string, ((r: Rules) => void)[]>()
+export function patchRules(card: string, f: (r: Rules) => void) {
+	patches.set(card, [...(patches.get(card) ?? []), f])
+	cache.clear()
+}
+
+/** Every triggered and activated ability is scripted or compiled. */
+export function allCompiled(r: Rules): boolean {
+	return r.triggers.every((t) => t.compiled && !t.conditional) && r.activated.every((a) => a.compiled || a.station) && !r.chapters?.some((c) => !c.compiled)
+}
+
 export function rulesFor(def: CardDef, flipped = false): Rules {
 	const key = def.id + (flipped ? '#back' : '')
 	const hit = cache.get(key)
@@ -1034,6 +1046,7 @@ export function rulesFor(def: CardDef, flipped = false): Rules {
 				t.conditional = false
 			}
 	if (overrides.has(face.name)) r.fullyAutomated = r.triggers.every((t) => t.compiled) && (r.fullyAutomated || r.triggers.length > 0)
+	for (const f of patches.get(face.name) ?? []) f(r)
 	cache.set(key, r)
 	return r
 }

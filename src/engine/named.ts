@@ -255,7 +255,7 @@ function assimilateTop(ctx: Ctx, me: number, who: number) {
 // ───────── triggered abilities of the commanders and key cards ─────────
 
 const N1 = (name: string): Compiled => ({ targets: [], effects: [{ e: 'named', name }] })
-const T = (card: string, events: TriggerEvent[], name: string, run: Named['run'], targets: Compiled['targets'] = []) => {
+export const T = (card: string, events: TriggerEvent[], name: string, run: Named['run'], targets: Compiled['targets'] = []) => {
 	NAMED[name] = { spell: { targets, effects: [{ e: 'named', name }] }, run }
 	overrideTrigger(card, { events, compiled: { targets, effects: [{ e: 'named', name }] } })
 }

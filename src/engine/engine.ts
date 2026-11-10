@@ -5,6 +5,7 @@
 import { chooseTargets, targetOptions, search as searchFx, discard as discardFx, H, Illegal, makeCtx, NeedChoice, runCompiled, setHooks, stillLegal, type Ctx } from './effects'
 import { addCost, costText, parseCost, solvePayment, type Cost, type Source } from './mana'
 import { NAMED, setCastFree } from './named'
+import './scripts'
 import type { Activated, Compiled, Effect, ManaAbility, Rules, Trigger, TriggerEvent } from './rules'
 import { Rng } from './rng'
 import {
@@ -128,6 +129,15 @@ export function shuffle(s: GameState, p: number) {
 
 function drawCards(s: GameState, p: number, n: number, quiet = false) {
 	const pl = s.players[p]
+	const archives = s.battlefield.filter((q) => q.controller === p && cardName(s, q.card) === "Alhammarret's Archive").length
+	let total = n
+	if (archives && s.turn > 0) {
+		// Alhammarret's Archive: every draw but the first one in your draw step is doubled
+		const first = s.step === 'draw' && s.active === p && (pl as { drawStepTurn?: number }).drawStepTurn !== s.turn
+		total = (first ? 1 : 0) + (n - (first ? 1 : 0)) * 2 ** archives
+	}
+	if (s.step === 'draw' && s.active === p) (pl as { drawStepTurn?: number }).drawStepTurn = s.turn
+	n = total
 	for (let i = 0; i < n; i++) {
 		const c = pl.library.shift()
 		if (!c) {
@@ -145,6 +155,7 @@ function drawCards(s: GameState, p: number, n: number, quiet = false) {
 
 function gainLife(s: GameState, p: number, n: number) {
 	if (n <= 0) return
+	n *= 2 ** s.battlefield.filter((q) => q.controller === p && cardName(s, q.card) === "Alhammarret's Archive").length
 	s.players[p].life += n
 	log(s, `${s.players[p].name} gains ${n} life.`)
 	for (const q of s.battlefield) if (q.controller === p) fire(s, q, 'gainLife')
@@ -201,11 +212,18 @@ function later(s: GameState, d: NonNullable<GameState['delayed']>[number]) {
 	;(s.delayed ??= []).push(d)
 }
 
-function runDelayed(s: GameState, at: 'end' | 'cleanup') {
-	const due = (s.delayed ?? []).filter((d) => d.at === at)
-	s.delayed = (s.delayed ?? []).filter((d) => d.at !== at)
+function runDelayed(s: GameState, at: 'end' | 'cleanup' | 'endCombat' | 'upkeep') {
+	const mine = (d: NonNullable<GameState['delayed']>[number]) => d.at === at && (at !== 'upkeep' || d.owner === s.active)
+	const due = (s.delayed ?? []).filter(mine)
+	s.delayed = (s.delayed ?? []).filter((d) => !mine(d))
 	for (const d of due) {
-		if (d.kind === 'return') {
+		if (d.kind === 'rebound') {
+			const l = locate(s, d.iid)
+			if (l && l.zone === 'exile') {
+				log(s, `${cardName(s, l.obj.card)} is cast again from rebound.`)
+				castFree(s, d.owner!, d.iid)
+			}
+		} else if (d.kind === 'return') {
 			const l = locate(s, d.iid)
 			if (l && l.zone === 'exile') {
 				moveCard(s, d.iid, 'battlefield', { controller: d.owner, manual: true })
@@ -213,6 +231,8 @@ function runDelayed(s: GameState, at: 'end' | 'cleanup') {
 			}
 		} else if (d.kind === 'exile') {
 			if (findPerm(s, d.iid)) moveCard(s, d.iid, 'exile')
+		} else if (d.kind === 'bottom') {
+			if (findPerm(s, d.iid)) moveCard(s, d.iid, 'libraryBottom')
 		} else if (d.kind === 'control') {
 			const q = findPerm(s, d.iid)
 			if (q && d.owner !== undefined) q.controller = d.owner
@@ -270,6 +290,7 @@ function onEnter(s: GameState, p: Perm) {
 		chapter(s, p)
 	}
 	fire(s, p, 'etb')
+	if (p.commander) for (const q of s.battlefield) if (q.controller === p.controller) fire(s, q, 'commanderEtb', p.iid)
 	for (const q of s.battlefield) {
 		if (q.iid === p.iid) {
 			continue
@@ -298,6 +319,8 @@ export function moveCard(s: GameState, iid: number, to: MoveTo, opts: { controll
 	let dest: MoveTo = to
 	if (obj.commander && !opts.manual && from !== 'command' && ['graveyard', 'exile', 'hand', 'library', 'libraryBottom'].includes(to)) dest = 'command'
 	if (snap) {
+		// "for as long as you control ~"
+		for (const q of s.battlefield) if (q.mods.some((m) => m.note === `while:${snap.iid}`)) q.mods = q.mods.filter((m) => m.note !== `while:${snap.iid}`)
 		if (isCreatureSnap(s, snap)) ((s as { lastPower?: Record<number, number> }).lastPower ??= {})[snap.iid] = pt(s, { ...snap, controller: snap.controller })[0]
 		// "until this leaves the battlefield" (Malfunctioning Holodeck)
 		for (const k of Object.keys(snap.counters)) if (k.startsWith('holding:')) {
@@ -306,6 +329,9 @@ export function moveCard(s: GameState, iid: number, to: MoveTo, opts: { controll
 			if (l && l.zone === 'exile') moveCard(s, held, 'battlefield', { controller: l.obj.owner, manual: true })
 		}
 		if (to === 'graveyard' && isCreatureSnap(s, snap)) {
+			;((s as { diedThisTurn?: Record<number, number> }).diedThisTurn ??= {})[snap.iid] = s.turn
+			// T'Pring: "whenever a creature that fought this way dies this turn, you draw a card"
+			for (const m of snap.mods) if (m.note?.startsWith('fought:')) drawCards(s, Number(m.note.slice(7)), 1)
 			fire(s, snap, 'dies')
 			for (const q of gear) for (const { t, index } of triggersOf(s, q, 'dies')) if (t.equipped) queue(s).push({ iid: q.iid, card: q.card, controller: q.controller, index })
 			for (const q of s.battlefield)
@@ -849,14 +875,14 @@ function doCast(ctx: Ctx) {
 	const it = detach(s, iid)!
 	if (f.zone === 'command') s.players[p].commanderCasts[card] = (s.players[p].commanderCasts[card] ?? 0) + 1
 	s.players[p].playable = s.players[p].playable?.filter((q) => q.iid !== iid)
-	s.stack.push({ sid: s.nextId++, kind: 'spell', controller: p, card, iid, obj: it.obj, text: back && def(s, card).back ? def(s, card).back!.name : cardName(s, card), targets, x, fromCommand: f.zone === 'command', manual, modes, kicked: kicked || undefined, flashback: flashback || undefined, ...(back ? { ability: -1 } : {}) })
+	s.stack.push({ sid: s.nextId++, kind: 'spell', controller: p, card, iid, obj: it.obj, text: back && def(s, card).back ? def(s, card).back!.name : cardName(s, card), targets, x, fromCommand: f.zone === 'command', manual, modes, kicked: kicked || undefined, flashback: flashback || undefined, rebound: (f.zone === 'hand' && /^Rebound\b/m.test(def(s, card).oracle)) || undefined, ...(back ? { ability: -1 } : {}) })
 	log(s, `${s.players[p].name} casts ${cardName(s, card)}${f.zone === 'command' ? ' from the command zone' : flashback ? ' with flashback' : free ? ' without paying its mana cost' : ''}${x ? ` (X=${x})` : ''}${kicked ? ' (kicked)' : ''}${targets.length ? ` targeting ${targets.map((t) => targetName(s, t)).join(', ')}` : ''}.`)
 	for (const { index } of triggersOf(s, { card }, 'cast')) queue(s).push({ iid, card, controller: p, index })
 	// "whenever you cast …" / "whenever an opponent casts …"
 	for (const q of s.battlefield)
 		for (const { t, index } of triggersOf(s, q, 'castSpell'))
 			if (reached(q, t.threshold) && (t.who === 'any' || (t.who === 'you') === (q.controller === p)) && (!t.filter || matches(s, t.filter, { card }, q.controller, p)))
-				queue(s).push({ iid: q.iid, card: q.card, flipped: q.flipped, controller: q.controller, index })
+				queue(s).push({ iid: q.iid, card: q.card, flipped: q.flipped, controller: q.controller, index, about: iid })
 	afterStackAdd(s, p)
 }
 
@@ -984,7 +1010,7 @@ function doTrigger(ctx: Ctx) {
 		}
 		targets = tt
 	}
-	s.stack.push({ sid: s.nextId++, kind: 'trigger', controller: q.controller, card: q.card, iid: q.iid, text: t.text, ability: q.index, targets, manual: !t.compiled, flipped: q.flipped, chapter: ch ? chapterIdx : undefined, x: t.event === 'combatDamagePlayer' && typeof q.about === 'number' ? q.about : undefined })
+	s.stack.push({ sid: s.nextId++, kind: 'trigger', controller: q.controller, card: q.card, iid: q.iid, text: t.text, ability: q.index, targets, manual: !t.compiled, flipped: q.flipped, chapter: ch ? chapterIdx : undefined, x: t.event === 'combatDamagePlayer' && typeof q.about === 'number' ? q.about : undefined, about: t.event === 'combatDamagePlayer' ? undefined : q.about })
 	s.passes = 0
 	s.pending = { kind: 'priority', player: s.active }
 }
@@ -1015,7 +1041,11 @@ function doResolve(ctx: Ctx) {
 			}
 			if (it.obj && !it.copy) {
 				const o = it.obj
-				s.players[o.owner][it.flashback ? 'exile' : 'graveyard'].push(o)
+				s.players[o.owner][it.flashback || it.rebound ? 'exile' : 'graveyard'].push(o)
+				if (it.rebound) {
+					later(s, { at: 'upkeep', kind: 'rebound', iid: o.iid, owner: o.owner })
+					log(s, `${cardName(s, it.card)} is exiled with rebound.`)
+				}
 				if (o.commander) moveCard(s, o.iid, 'command')
 			}
 			log(s, `${cardName(s, it.card)} resolves.`)
@@ -1222,11 +1252,14 @@ function enterStep(s: GameState, step: Step) {
 			const pl = s.players[a]
 			pl.landsPlayed = 0
 			for (const x of s.players) x.drawsThisTurn = 0
+			;(s as { diedThisTurn?: Record<number, number> }).diedThisTurn = {}
 			for (const p of s.battlefield) {
 				if (p.controller === a) {
-					p.tapped = false
+					if (p.skipUntap) p.skipUntap = false
+					else p.tapped = false
 					p.sick = false
 				}
+				else if (p.tapped && isType(s, p, 'artifact') && s.battlefield.some((q) => q.controller === p.controller && cardName(s, q.card) === 'Unwinding Clock')) p.tapped = false
 				p.used = undefined
 				p.mods = p.mods.filter((m) => !(m.until === 'turn' && (m.expires ?? 0) <= s.turn))
 			}
@@ -1234,6 +1267,7 @@ function enterStep(s: GameState, step: Step) {
 			return enterStep(s, 'upkeep')
 		}
 		case 'upkeep':
+			runDelayed(s, 'upkeep')
 			for (const p of s.battlefield) {
 				if (p.controller === a) fire(s, p, 'upkeep')
 				fire(s, p, 'eachUpkeep')
@@ -1293,6 +1327,7 @@ function enterStep(s: GameState, step: Step) {
 			combatDamage(s, false)
 			break
 		case 'endCombat':
+			runDelayed(s, 'endCombat')
 			break
 		case 'main2':
 			s.combat = null
@@ -1323,7 +1358,18 @@ function enterStep(s: GameState, step: Step) {
 }
 
 function nextStep(s: GameState) {
+	if (s.step === 'main2' && (s.extraCombats ?? 0) > 0) {
+		s.extraCombats!--
+		log(s, `${s.players[s.active].name} gets an additional combat phase.`)
+		if ((s.untapAtExtra ?? 0) > 0) {
+			s.untapAtExtra!--
+			for (const q of s.battlefield) if (q.attackedTurn === s.turn) q.tapped = false
+		}
+		return enterStep(s, 'beginCombat')
+	}
 	if (s.step === 'cleanup') {
+		s.extraCombats = 0
+		s.untapAtExtra = 0
 		s.active = opp(s.active)
 		return enterStep(s, 'untap')
 	}
@@ -1378,6 +1424,14 @@ function combatDamage(s: GameState, first: boolean) {
 		dealDamage(s, { card: d.src.card, controller: d.src.controller, iid: d.src.iid }, d.t, d.n, true)
 		if (d.t.kind === 'player') fire(s, d.src, 'combatDamagePlayer', d.n)
 	}
+	// Right of Vengeance: "until end of turn, whenever a creature deals combat damage to you, destroy it and create a 2/1 Klingon Warrior"
+	const veng = (s as { vengeance?: { player: number; turn: number }[] }).vengeance?.filter((v) => v.turn === s.turn) ?? []
+	for (const v of veng)
+		for (const d of dealt)
+			if (d.t.kind === 'player' && d.t.id === v.player && findPerm(s, d.src.iid)) {
+				destroy(s, d.src.iid)
+				createToken(s, v.player, makeTokenDef(s, { e: 'token', n: 1, name: 'Klingon Warrior', power: 2, toughness: 1, types: 'Creature — Klingon Warrior', colors: ['R'], keywords: ['haste'] }, 0), 1)
+			}
 	// "whenever one or more Officers you control deal combat damage to a player" — once per damage step
 	for (const q of s.battlefield)
 		for (const { t, index } of triggersOf(s, q, 'teamDamage'))
@@ -1569,6 +1623,7 @@ export function apply(s0: GameState, intent: Intent): GameState {
 			for (const iid of intent.attackers) {
 				const a = findPerm(s, iid)!
 				if (!hasKw(s, a, 'vigilance')) setTapped(s, a, true)
+				a.attackedTurn = s.turn
 				fire(s, a, 'attacks')
 			}
 			if (intent.attackers.length) {
@@ -1584,6 +1639,8 @@ export function apply(s0: GameState, intent: Intent): GameState {
 						if (n) a.mods.push({ power: n, toughness: 0, until: 'eot', note: permName(s, sa) })
 					}
 				for (const q of s.battlefield) if (q.controller === p) fire(s, q, 'youAttack')
+				for (const a of atk) if (a.commander) for (const q of s.battlefield) if (q.controller === p) fire(s, q, 'commanderAttacks', a.iid)
+				if (atk.some((a) => hasKw(s, a, 'goaded'))) for (const q of s.battlefield) fire(s, q, 'goadedAttack')
 			}
 			if (intent.attackers.length) log(s, `${s.players[p].name} attacks with ${intent.attackers.map((iid) => permName(s, findPerm(s, iid)!)).join(', ')}.`)
 			else {
