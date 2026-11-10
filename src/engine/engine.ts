@@ -1480,6 +1480,33 @@ function passPriority(s: GameState, p: number) {
 	} else s.pending = { kind: 'priority', player: opp(p) }
 }
 
+// ───────── frames: the in-between moments of one move, for the UI to play back ─────────
+
+let collecting: GameState[] | null = null
+let frameBase = 0
+const FRAME_CAP = 12
+
+/** Run `f` and return the in-between states (attacks declared, a spell on the stack, damage dealt, …) that
+ * one apply() skipped through with automatic passes. Only successful applies contribute. */
+export function withFrames<T>(f: () => T): { result: T; frames: GameState[] } {
+	const outer = collecting
+	collecting = []
+	try {
+		const result = f()
+		const frames = collecting
+		return { result, frames: frames.length > FRAME_CAP ? frames.slice(-FRAME_CAP) : frames }
+	} finally {
+		collecting = outer
+	}
+}
+
+function snap(s: GameState) {
+	if (!collecting) return
+	const last = collecting[collecting.length - 1]
+	if (last ? last.log.length === s.log.length && last.stack.length === s.stack.length : s.log.length === frameBase) return
+	collecting.push(cloneState(s))
+}
+
 function settle(s: GameState): GameState {
 	for (let guard = 0; guard < 2000; guard++) {
 		if (s.pending.kind === 'over') return s
@@ -1502,6 +1529,7 @@ function settle(s: GameState): GameState {
 		if (s.pending.kind === 'priority') {
 			const p = s.pending.player
 			if (!wantsStop(s, p)) {
+				snap(s)
 				passPriority(s, p)
 				continue
 			}
@@ -1514,15 +1542,18 @@ function settle(s: GameState): GameState {
 // ───────── apply ─────────
 
 export function tryApply(s: GameState, intent: Intent): { state: GameState; error?: undefined } | { state?: undefined; error: string } {
+	const mark = collecting?.length ?? 0
 	try {
 		return { state: apply(s, intent) }
 	} catch (e) {
+		if (collecting) collecting.length = mark
 		if (e instanceof Illegal) return { error: e.message }
 		throw e
 	}
 }
 
 export function apply(s0: GameState, intent: Intent): GameState {
+	if (collecting && !collecting.length) frameBase = s0.log.length
 	let s = cloneState(s0)
 	s.notice = null
 	const p = intent.player

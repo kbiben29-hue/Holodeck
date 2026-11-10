@@ -3,7 +3,8 @@ import { actor, botStep } from './bot/bot'
 import { buildGame } from './data/build'
 import { allNames } from './data/decks'
 import { cachedPool, loadCards, type CardPool } from './data/scryfall'
-import { tryApply } from './engine/engine'
+import { tryApply, withFrames } from './engine/engine'
+import { beatFor, readPace, writePace, type Pace } from './ui/prefs'
 import type { CardDef, Format, GameState, Intent } from './engine/types'
 import { clearJoinFromUrl, isGuestMsg, isHostMsg, joinCodeFromUrl, joinLink, stripCards, withCards, type DeckChoice, type GuestMsg, type HostMsg } from './net/online'
 import { hostGame, joinGame, newGameCode, type Conn, type Host } from './net/transport'
@@ -111,6 +112,12 @@ export default function App() {
 	const [netError, setNetError] = useState<string | null>(null)
 	const [joinCode, setJoinCode] = useState<string | null>(() => joinCodeFromUrl())
 	const [lessonsOpen, setLessonsOpen] = useState(false)
+	const [pace, setPaceState] = useState<Pace>(() => readPace())
+	const setPace = (p: Pace) => (writePace(p), setPaceState(p))
+	/** In-between moments of the latest move (attack declared, spell on the stack, damage…), played back before it. */
+	const framesOf = useRef(new WeakMap<GameState, GameState[]>())
+	const [shown, setShown] = useState<GameState | null>(null)
+	const skipRef = useRef<() => void>(() => {})
 	const sessionRef = useRef<Session | null>(null)
 	const lobbyRef = useRef<Lobby | null>(null)
 	const hostRef = useRef<Host | null>(null)
@@ -143,6 +150,34 @@ export default function App() {
 
 	const state = session?.history[session.history.length - 1]
 
+	// Play back the in-between moments of the latest move, one beat each; a click skips.
+	useEffect(() => {
+		if (!state) return
+		const all = framesOf.current.get(state) ?? []
+		framesOf.current.delete(state)
+		const beat = beatFor(pace)
+		const fr = all.filter((f) => f.log.length < state.log.length || f.stack.length !== state.stack.length)
+		if (!beat || !fr.length) {
+			setShown(null)
+			return
+		}
+		let i = 0
+		setShown(fr[0])
+		let timer = 0
+		const tick = () => {
+			i++
+			if (i >= fr.length) return setShown(null)
+			setShown(fr[i])
+			timer = window.setTimeout(tick, beat)
+		}
+		timer = window.setTimeout(tick, beat)
+		skipRef.current = () => {
+			window.clearTimeout(timer)
+			setShown(null)
+		}
+		return () => window.clearTimeout(timer)
+	}, [state])
+
 	useEffect(() => {
 		if (session) saveSession(session)
 	}, [session])
@@ -152,8 +187,9 @@ export default function App() {
 			const cur = sessionRef.current
 			if (!cur) return 'No game'
 			const st = cur.history[cur.history.length - 1]
-			const r = tryApply(st, i)
+			const { result: r, frames } = withFrames(() => tryApply(st, i))
 			if (r.error) return r.error
+			framesOf.current.set(r.state!, frames)
 			if (cur.online?.role === 'guest') {
 				if (!connRef.current) return 'Not connected to your friend’s game'
 				connRef.current.send({ type: 'intent', intent: i } satisfies GuestMsg)
@@ -203,7 +239,7 @@ export default function App() {
 
 	// Computer opponent plays seat 1.
 	useEffect(() => {
-		if (!state || !session?.bot) return
+		if (!state || !session?.bot || shown) return
 		const who = actor(state)
 		if (who !== 1) return
 		const tut = session.tutorial
@@ -215,15 +251,16 @@ export default function App() {
 			if (!cur) return
 			const st = cur.history[cur.history.length - 1]
 			if (actor(st) !== 1) return
-			const next = botStep(st, 1)
+			const { result: next, frames } = withFrames(() => botStep(st, 1))
 			if (next) {
+				framesOf.current.set(next, frames)
 				const n = { ...cur, history: [...cur.history.slice(-80), next] }
 				sessionRef.current = n
 				setSession(n)
 			}
 		}, tut ? 900 : 420)
 		return () => window.clearTimeout(t)
-	}, [state, session?.bot, session?.tutorial?.intro])
+	}, [state, shown, session?.bot, session?.tutorial?.intro])
 
 	// ───── online play ─────
 	const closeNet = () => {
@@ -277,7 +314,8 @@ export default function App() {
 				if (!cur) return
 				const st = cur.history[cur.history.length - 1]
 				if (m.intent.player !== 1) return
-				const r = tryApply(st, m.intent)
+				const { result: r, frames } = withFrames(() => tryApply(st, m.intent))
+				if (r.state) framesOf.current.set(r.state, frames)
 				if (r.error) c.send({ type: 'error', message: r.error } satisfies HostMsg)
 				else {
 					const next = { ...cur, history: [...cur.history.slice(-80), r.state!] }
@@ -456,7 +494,11 @@ export default function App() {
 		body = (
 			<>
 				<Board
-					state={state}
+					state={shown ?? state}
+					busy={!!shown}
+					onSkip={() => skipRef.current()}
+					pace={pace}
+					onPace={setPace}
 					send={send}
 					viewer={viewer}
 					hideHand={handoff !== null}

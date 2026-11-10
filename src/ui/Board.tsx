@@ -2,6 +2,8 @@ import { useEffect, useMemo, useRef, useState, type MouseEvent, type ReactNode }
 import { abilityProblem, canAttack, canBlock, canCast, canPlayLand, commanderTax, manaAbilitiesOf, spellCost, STEP_NAMES, tryApply } from '../engine/engine'
 import { costText } from '../engine/mana'
 import { useMotion } from './motion'
+import type { Pace } from './prefs'
+import { Arrows } from './Arrows'
 import { cardName, def, findPerm, isCreature, keywords, opp, permName, pt, rulesOf } from '../engine/state'
 import type { CardDef, GameState, Intent, Mana, ManualOp, Obj, Perm, Step } from '../engine/types'
 import { CardBack, CardFaceView, Cost, Pip } from './Card'
@@ -26,6 +28,11 @@ export interface BoardProps {
 	/** Tutorial coach panel and the moves it suggests. */
 	coach?: ReactNode
 	hint?: Hint
+	/** Playing back the in-between moments of a move: the table is read-only, a click skips ahead. */
+	busy?: boolean
+	onSkip?: () => void
+	pace?: Pace
+	onPace?: (p: Pace) => void
 }
 
 /** Does a button label match one of the hinted labels? */
@@ -133,7 +140,7 @@ export function Board(props: BoardProps) {
 
 	// "End turn": keep passing (and declaring no attack) until the turn moves on or something happens
 	useEffect(() => {
-		if (!autoEnd) return
+		if (!autoEnd || props.busy) return
 		if (s.active !== me || s.stack.length || pend.kind === 'over') return setAutoEnd(false)
 		if (pend.kind === 'priority' && pend.player === me) {
 			const t = window.setTimeout(() => act({ type: 'pass', player: me }) || setAutoEnd(false), 60)
@@ -144,7 +151,7 @@ export function Board(props: BoardProps) {
 			return () => window.clearTimeout(t)
 		}
 		if (pend.kind === 'choose') setAutoEnd(false)
-	}, [autoEnd, s, me])
+	}, [autoEnd, s, me, props.busy])
 
 	const selected = sel ? locateAny(s, sel.iid) : null
 	const shownIid = hover ?? sel?.iid ?? null
@@ -179,16 +186,19 @@ export function Board(props: BoardProps) {
 				setSel({ iid: p.iid })
 				return
 			}
-			if (p.controller !== me && blockFrom !== null && s.combat?.attackers.some((a) => a.iid === p.iid)) {
-				const b = findPerm(s, blockFrom)
-				if (b && canBlock(s, b, p)) setBlocks([...blocks.filter((x) => x.blocker !== blockFrom), { blocker: blockFrom, attacker: p.iid }])
-				else flash(`${b ? permName(s, b) : 'That'} can't block ${permName(s, p)}.`)
-				setBlockFrom(null)
-				return
-			}
+			if (assignBlock(p)) return
 		}
 		setSel({ iid: p.iid })
 		if (layout === 'pocket') setSheet(true)
+	}
+	/** Blocking: the creature picked up (blockFrom) blocks attacker `p`. */
+	const assignBlock = (p: Perm): boolean => {
+		if (!(pend.kind === 'blockers' && pend.player === me && p.controller !== me && blockFrom !== null && s.combat?.attackers.some((a) => a.iid === p.iid))) return false
+		const b = findPerm(s, blockFrom)
+		if (b && canBlock(s, b, p)) setBlocks([...blocks.filter((x) => x.blocker !== blockFrom), { blocker: blockFrom, attacker: p.iid }])
+		else flash(`${b ? permName(s, b) : 'That'} can't block ${permName(s, p)}.`)
+		setBlockFrom(null)
+		return true
 	}
 	const clickCard = (o: Obj) => {
 		setSel({ iid: o.iid })
@@ -216,7 +226,21 @@ export function Board(props: BoardProps) {
 		const d = def(s, p.card)
 		const counters = Object.entries(p.counters).filter(([, v]) => v)
 		return (
-			<div key={p.iid} className={`perm ${size} ${p.tapped ? 'tapped' : ''}`} data-iid={p.iid}>
+			<div
+				key={p.iid}
+				className={`perm ${size} ${p.tapped ? 'tapped' : ''}`}
+				data-iid={p.iid}
+				onPointerDown={() => {
+					// drag a blocker onto an attacker
+					if (pend.kind === 'blockers' && pend.player === me && p.controller === me && isCreature(s, p) && !p.tapped) {
+						setBlocks((bs) => bs.filter((b) => b.blocker !== p.iid))
+						setBlockFrom(p.iid)
+					}
+				}}
+				onPointerUp={() => {
+					if (blockFrom !== null && blockFrom !== p.iid) assignBlock(p)
+				}}
+			>
 				<CardFaceView
 					def={d}
 					back={p.flipped}
@@ -446,7 +470,7 @@ export function Board(props: BoardProps) {
 						.slice()
 						.reverse()
 						.map((it, i) => (
-							<div key={it.sid} data-iid={it.obj?.iid} className={`stack-item ${i === 0 ? 'top' : ''} ${it.controller === me ? 'mine' : 'theirs'}`} onMouseEnter={(e) => peek(it.obj?.iid ?? it.iid, e)} onMouseLeave={unpeek} title={it.text}>
+							<div key={it.sid} data-iid={it.obj?.iid} data-sid={it.sid} className={`stack-item ${i === 0 ? 'top' : ''} ${it.controller === me ? 'mine' : 'theirs'}`} onMouseEnter={(e) => peek(it.obj?.iid ?? it.iid, e)} onMouseLeave={unpeek} title={it.text}>
 								<CardFaceView def={def(s, it.card)} />
 								<span className="si-text">
 									<b>{it.kind === 'spell' ? cardName(s, it.card) : `${cardName(s, it.card)} — ${it.kind === 'trigger' ? 'trigger' : 'ability'}`}</b>
@@ -473,7 +497,7 @@ export function Board(props: BoardProps) {
 
 	const promptBar = (
 		<div className={`prompt ${prompt.mine ? 'mine' : ''}`}>
-			<span className="ptext">{attachFrom !== null ? 'Click the permanent to attach it to (or click it again to cancel).' : blockFrom !== null ? 'Now click the attacker it should block.' : prompt.text}</span>
+			<span className="ptext">{attachFrom !== null ? 'Click the permanent to attach it to (or click it again to cancel).' : blockFrom !== null ? 'Now click (or drop it on) the attacker it should block.' : prompt.text}</span>
 			<span className="pbtns">
 				{attachFrom !== null ? (
 					<button onClick={() => setAttachFrom(null)}>Cancel</button>
@@ -594,6 +618,8 @@ export function Board(props: BoardProps) {
 						</div>
 					</div>
 				)}
+				{props.busy && <div className="busy-catch" title="Click to skip ahead" onPointerDown={(e) => (e.stopPropagation(), props.onSkip?.())} />}
+				<Arrows host={boardRef} s={s} me={me} attackSel={pend.kind === 'attackers' && pend.player === me ? attackSel : []} blocks={pend.kind === 'blockers' && pend.player === me ? blocks : []} blockFrom={blockFrom} />
 				{modals}
 			</div>
 		)
@@ -642,6 +668,8 @@ export function Board(props: BoardProps) {
 				<div className="actions-wrap">{actions}</div>
 				{logView}
 			</div>
+			{props.busy && <div className="busy-catch" title="Click to skip ahead" onPointerDown={(e) => (e.stopPropagation(), props.onSkip?.())} />}
+			<Arrows host={boardRef} s={s} me={me} attackSel={pend.kind === 'attackers' && pend.player === me ? attackSel : []} blocks={pend.kind === 'blockers' && pend.player === me ? blocks : []} blockFrom={blockFrom} />
 			{modals}
 		</div>
 	)
@@ -1285,6 +1313,16 @@ function MenuModal(props: BoardProps & { me: number; tool: (m: ManualOp) => bool
 							</button>
 						))}
 					</div>
+					{props.onPace && (
+						<div className="layout-pick">
+							Animation:
+							{(['full', 'fast', 'off'] as Pace[]).map((c) => (
+								<button key={c} className={props.pace === c ? 'primary' : ''} onClick={() => props.onPace!(c)}>
+									{c === 'full' ? 'Full' : c === 'fast' ? 'Fast' : 'Off'}
+								</button>
+							))}
+						</div>
+					)}
 					{props.onUndo && <button onClick={() => (props.onUndo!(), close())}>Undo last move</button>}
 					<button onClick={() => (confirm ? (props.send({ type: 'concede', player: me }), close()) : setConfirm(true))}>{confirm ? 'Really concede?' : 'Concede'}</button>
 					<button onClick={props.onMenu}>Leave game (it’s saved)</button>

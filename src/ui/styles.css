@@ -2107,3 +2107,88 @@ button.mini {
 		animation: none;
 	}
 }
+
+/* ───────── arrows (src/ui/Arrows.tsx) and playback ───────── */
+.arrows {
+	position: absolute;
+	left: 0;
+	top: 0;
+	pointer-events: none;
+	z-index: 390;
+	overflow: visible;
+}
+.arrow path {
+	fill: none;
+	stroke-linecap: round;
+}
+.arrow .arrow-line {
+	stroke-width: 5;
+	animation: arrow-draw 0.35s ease-out;
+	stroke-dasharray: 1200;
+	stroke-dashoffset: 0;
+}
+.arrow .arrow-glow {
+	stroke-width: 13;
+	opacity: 0.28;
+	filter: blur(3px);
+}
+@keyframes arrow-draw {
+	from {
+		stroke-dashoffset: 1200;
+	}
+}
+.arrow.mine path,
+.ah.mine {
+	stroke: #7fb8ff;
+	fill: #7fb8ff;
+}
+.arrow.theirs path,
+.ah.theirs {
+	stroke: #ff8a5c;
+	fill: #ff8a5c;
+}
+.arrow.attack path,
+.ah.attack {
+	stroke: #ff4b3e;
+	fill: #ff4b3e;
+}
+.arrow.block path,
+.ah.block {
+	stroke: #63b3ff;
+	fill: #63b3ff;
+}
+.arrow.plan path,
+.ah.plan {
+	stroke: #f3d27a;
+	fill: #f3d27a;
+}
+.arrow.plan .arrow-line {
+	stroke-dasharray: 10 8;
+	animation: arrow-march 0.6s linear infinite;
+}
+@keyframes arrow-march {
+	to {
+		stroke-dashoffset: -18;
+	}
+}
+.ah {
+	stroke: none !important;
+}
+.busy-catch {
+	position: absolute;
+	inset: 0;
+	z-index: 500;
+	cursor: pointer;
+}
+.pocket .arrow .arrow-line {
+	stroke-width: 3;
+}
+.pocket .arrow .arrow-glow {
+	stroke-width: 8;
+}
+@media (prefers-reduced-motion: reduce) {
+	.arrow .arrow-line,
+	.arrow.plan .arrow-line {
+		animation: none;
+	}
+}

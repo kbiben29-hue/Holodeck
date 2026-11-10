@@ -1,6 +1,6 @@
 import assert from 'node:assert/strict'
 import { test } from 'node:test'
-import { newGame, apply, tryApply } from './engine'
+import { newGame, apply, tryApply, withFrames } from './engine'
 import { FIX, FIX_DECKS, mk } from './fixture'
 import { rulesFor } from './rules'
 import { findPerm, pt } from './state'
@@ -146,4 +146,18 @@ test('The Guardian of Forever brings the sacrificed creature back at the end ste
 	s = until(s, (x) => x.step === 'cleanup' || x.active === 1)
 	assert.ok(findPerm(s, bears), 'returned at the end step')
 	assert.ok(rulesFor(guardian).fullyAutomated)
+})
+
+test('withFrames returns the in-between moments of a move (attack declared before damage)', () => {
+	let s = start()
+	const bears = give(s, 0, 'grizzly-bears', 'battlefield')
+	s = ok(s, { type: 'pass', player: 0 })
+	s = until(s, (x) => x.pending.kind === 'attackers')
+	const { result, frames } = withFrames(() => tryApply(s, { type: 'attack', player: 0, attackers: [bears] }))
+	assert.ok(result.state)
+	assert.ok(frames.length >= 1)
+	assert.ok(frames.some((f) => f.combat?.attackers.some((a) => a.iid === bears) && f.players[1].life === 20), 'a frame shows the attack before damage')
+	assert.equal(result.state!.players[1].life, 18)
+	// failed moves add nothing
+	assert.equal(withFrames(() => tryApply(s, { type: 'attack', player: 1, attackers: [] })).frames.length, 0)
 })
