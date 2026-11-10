@@ -462,3 +462,6 @@ T('Grilka, Widowed Warrior', ['etb'], 'Grilka#t', (ctx, item) => {
 	H().later(s, { at: 'cleanup', kind: 'control', iid: p.iid, owner: was })
 	log(s, `${s.players[me].name} gains control of ${permName(s, p)} until end of turn.`)
 })
+
+/** Cast a card without paying its mana cost (for scripts in other files). */
+export const castFreeNow = (s: Parameters<Named['run']>[0]['s'], p: number, iid: number) => castFreeHook(s, p, iid)

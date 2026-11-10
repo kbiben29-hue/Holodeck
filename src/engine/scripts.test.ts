@@ -14,7 +14,10 @@ const arex = mk('Lt. Arex, Ever-Adapting', '{5}{G}{U}', 'Legendary Creature — 
 const archive = mk("Alhammarret's Archive", '{5}', 'Legendary Artifact', 'If you would gain life, you gain twice that much life instead.\nIf you would draw a card except the first one you draw in each of your draw steps, draw two cards instead.')
 const vengeance = mk('Right of Vengeance', '{3}{W}', 'Instant', 'Until end of turn, whenever a creature deals combat damage to you, destroy that creature and create a 2/1 red Klingon Warrior creature token with haste.')
 const tube = mk('Jefferies Tube', '{1}', 'Artifact', '{4}, {T}: Draw a card. You may put a land card from your hand onto the battlefield tapped.')
-const ALL = [stargazer, ownTheDay, passage, arex, archive, vengeance, tube]
+const sword = mk('The Sword of Kahless', '{4}', 'Legendary Artifact — Equipment', 'Equipped creature gets +2/+2 and has "Whenever this creature attacks, look at the top five cards of your library. You may put a Klingon or Warrior creature card from among them onto the battlefield. Put the rest on the bottom of your library in a random order."\nEquip {2}')
+const warrior = mk('Klingon Recruit', '{1}{R}', 'Creature — Klingon Warrior', '', '2/2')
+const guardian = mk('The Guardian of Forever', '{3}', 'Legendary Artifact Creature — Construct', "Defender\n{4}, Sacrifice another nontoken creature: Return that card to the battlefield under its owner's control at the beginning of the next end step.", '0/6')
+const ALL = [stargazer, ownTheDay, passage, arex, archive, vengeance, tube, sword, warrior, guardian]
 
 function start(): GameState {
 	let s = newGame({ players: [{ name: 'A', ...FIX_DECKS.uw }, { name: 'B', ...FIX_DECKS.rg }], cards: { ...FIX, ...Object.fromEntries(ALL.map((c) => [c.id, c])) }, seed: 7, format: 'duel', first: 0 })
@@ -118,3 +121,29 @@ test('Right of Vengeance destroys the creature that hits you', () => {
 	assert.ok(s.battlefield.some((p) => p.controller === 1 && s.cards[p.card]?.name === 'Klingon Warrior'))
 })
 
+
+test('The Sword of Kahless gives +2/+2 and finds a Warrior when its creature attacks', () => {
+	let s = start()
+	const bears = give(s, 0, 'grizzly-bears', 'battlefield')
+	const sw = give(s, 0, sword.id, 'battlefield')
+	findPerm(s, sw)!.attachedTo = bears
+	assert.deepEqual(pt(s, findPerm(s, bears)!), [4, 4])
+	give(s, 0, warrior.id, 'library')
+	s = ok(s, { type: 'pass', player: 0 })
+	s = until(s, (x) => x.step === 'main2', () => [bears])
+	assert.ok(s.battlefield.some((p) => p.card === warrior.id && p.controller === 0), 'Warrior put onto the battlefield')
+	assert.equal(s.players[1].life, 16)
+})
+
+test('The Guardian of Forever brings the sacrificed creature back at the end step', () => {
+	let s = start()
+	const g = give(s, 0, guardian.id, 'battlefield')
+	const bears = give(s, 0, 'grizzly-bears', 'battlefield')
+	lands(s, 0, 4, 'plains')
+	s = ok(s, { type: 'activate', player: 0, iid: g, ability: rulesFor(guardian).activated[0].index })
+	s = until(s, (x) => !x.stack.length && x.pending.kind === 'priority')
+	assert.ok(!findPerm(s, bears), 'sacrificed')
+	s = until(s, (x) => x.step === 'cleanup' || x.active === 1)
+	assert.ok(findPerm(s, bears), 'returned at the end step')
+	assert.ok(rulesFor(guardian).fullyAutomated)
+})

@@ -5,10 +5,10 @@
 
 import type { Ctx } from './effects'
 import { discard, H, scry, search } from './effects'
-import { assimilate, NAMED, T } from './named'
+import { assimilate, castFreeNow as castFreeHook, NAMED, T } from './named'
 import { Rng } from './rng'
 import { allCompiled, overrideTrigger, patchRules, type Compiled, type Filter, type Trigger, type TriggerEvent } from './rules'
-import { CDA, cardName, def, findPerm, GRANTS, isCreature, isType, locate, log, matches, opp, permName, pt, rulesOf } from './state'
+import { BUFFS, CDA, cardName, COST_MODS, def, findPerm, GRANTS, isCreature, isType, locate, log, matches, opp, permName, pt, rulesOf } from './state'
 import type { GameState, Perm, StackItem } from './types'
 
 type Run = (ctx: Ctx, item: StackItem) => void
@@ -577,3 +577,174 @@ reg('BoBW III', (ctx, item) => {
 // Unwinding Clock and Alhammarret's Archive are handled in engine.ts (untap step, draws and life gain).
 done('Unwinding Clock')
 done("Alhammarret's Archive")
+
+// ───────── batch 2: equipment that grants triggers, chosen creature types, sagas ─────────
+
+/** "Equipped creature gets +P/+T and has 'Whenever this creature attacks, …'" */
+function equipAttack(card: string, name: string, power: number, toughness: number) {
+	patchRules(card, (r) => {
+		if (power || toughness) r.statics.push({ kind: 'equip', power, toughness, keywords: [] })
+		r.triggers.push({ index: r.triggers.length, event: 'attacks', text: 'Equipped creature: whenever it attacks …', effectText: '', compiled: named(name), equipped: true })
+		if (allCompiled(r)) r.fullyAutomated = true
+	})
+}
+equipAttack('The Sword of Kahless', 'Sword of Kahless#t', 2, 2)
+
+reg('Communicator#t', (ctx, item) => {
+	const s = ctx.s
+	const me = item.controller
+	const eq = findPerm(s, item.iid)
+	const host = eq?.attachedTo
+	const x = mine(s, me, (p) => p.iid !== host && isCreature(s, p) && s.battlefield.some((q) => q.attachedTo === p.iid && rulesOf(s, q).subtypes.includes('Communicator'))).length
+	if (!x) return
+	H().draw(s, me, x)
+	landsFromHand(ctx, me, 'sfc', x)
+})
+equipAttack('Starfleet Communicator', 'Communicator#t', 0, 0)
+trig('Starfleet Communicator', 'cast', 'Communicator#cast', (ctx, item) => {
+	H().createToken(ctx.s, item.controller, item.card, 1)
+	log(ctx.s, 'Starfleet Communicator is copied (the copy is a token).')
+}, { text: 'When you cast this spell, copy it.' })
+patchRules('Starfleet Communicator', (r) => {
+	if (allCompiled(r)) r.fullyAutomated = true
+})
+
+T('U.S.S. Farragut, Bold Explorer', ['landfall'], 'Farragut#t', (ctx, item) => {
+	const s = ctx.s
+	const me = item.controller
+	const cs = s.players[me].hand.filter((o) => rulesOf(s, o).types.includes('creature'))
+	const [id] = pickCard(ctx, me, 'fg', 'Farragut: you may put a creature card from your hand onto the battlefield (it has haste; at the next end step it goes to the bottom of your library and you draw a card)', cs, 0, 1)
+	if (id === undefined) return
+	H().move(s, id, 'battlefield', { controller: me })
+	findPerm(s, id)?.mods.push({ power: 0, toughness: 0, keywords: ['haste'], until: 'perm' })
+	H().later(s, { at: 'end', kind: 'bottom', iid: id, owner: me, draw: true })
+})
+done('U.S.S. Farragut, Bold Explorer')
+
+act('Lieutenant Nyota Uhura', /exiles the top X cards/, 'Uhura#a', (ctx, item) => {
+	const s = ctx.s
+	const me = item.controller
+	const them = opp(me)
+	const x = landNames(s, me)
+	const top = s.players[them].library.slice(0, x)
+	for (const o of top) H().move(s, o.iid, 'exile')
+	log(s, `${s.players[them].name} exiles the top ${top.length} cards of their library.`)
+	const spells = top.filter((o) => rulesOf(s, o).types.some((t) => t === 'instant' || t === 'sorcery'))
+	const [pick] = pickCard(ctx, me, 'uh', 'Uhura: you may cast an instant or sorcery from among them for free', spells, 0, 1)
+	bottomRandom(s, top.filter((o) => o.iid !== pick).map((o) => o.iid))
+	if (pick !== undefined) castFreeHook(s, me, pick)
+})
+done('Lieutenant Nyota Uhura')
+
+act('Chief Montgomery Scott', /creature or Spacecraft card from your hand/, 'Scotty#a', (ctx, item) => {
+	const s = ctx.s
+	const me = item.controller
+	const x = landNames(s, me)
+	const cs = s.players[me].hand.filter((o) => rulesOf(s, o).types.includes('creature') || rulesOf(s, o).subtypes.includes('Spacecraft'))
+	const [id] = pickCard(ctx, me, 'sc', `Scotty: you may put a creature or Spacecraft card onto the battlefield with ${x} extra counters`, cs, 0, 1)
+	if (id === undefined) return
+	const ship = rulesOf(s, s.players[me].hand.find((o) => o.iid === id)!).subtypes.includes('Spacecraft')
+	H().move(s, id, 'battlefield', { controller: me })
+	const p = findPerm(s, id)
+	if (p) addCounters(p, ship ? 'charge' : '+1/+1', x)
+})
+done('Chief Montgomery Scott')
+
+act('The Guardian of Forever', /Return that card/, 'Guardian of Forever#a', (ctx, item) => {
+	const s = ctx.s
+	if (item.about === undefined) return
+	const l = locate(s, item.about)
+	if (l) H().later(s, { at: 'end', kind: 'return', iid: item.about, owner: l.obj.owner })
+	log(s, 'It will return at the beginning of the next end step.')
+})
+done('The Guardian of Forever')
+
+/** "As this artifact enters, choose a creature type" — remembered as a counter key on the permanent. */
+const chosenType = (p: Perm) => Object.keys(p.counters).find((k) => k.startsWith('type:'))?.slice(5)
+function chooseType(card: string) {
+	trig(card, 'etb', `${card}#type`, (ctx, item) => {
+		const s = ctx.s
+		const me = item.controller
+		const count = new Map<string, number>()
+		for (const o of [...s.players[me].library, ...s.players[me].hand, ...s.battlefield.filter((p) => p.controller === me)])
+			if (rulesOf(s, o).types.includes('creature')) for (const t of rulesOf(s, o).subtypes) count.set(t, (count.get(t) ?? 0) + 1)
+		const opts = [...count.entries()].sort((a, b) => b[1] - a[1]).slice(0, 8)
+		if (!opts.length) opts.push(['Human', 0])
+		const [t] = ctx.ask(me, { key: 'ct', prompt: `${card}: choose a creature type`, options: opts.map(([t, n]) => ({ id: t, label: `${t} (${n})`, score: n })), min: 1, max: 1 })
+		const p = findPerm(s, item.iid)
+		if (p) p.counters[`type:${t}`] = 1
+		log(s, `${card}: ${t} chosen.`)
+	}, { text: 'As this enters, choose a creature type.' })
+}
+const ofType = (s: GameState, o: { card: string }, t?: string) => !!t && rulesOf(s, o).subtypes.includes(t)
+
+chooseType("Herald's Horn")
+COST_MODS["Herald's Horn"] = (s, src, card) => (rulesOf(s, { card }).types.includes('creature') && ofType(s, { card }, chosenType(src)) ? 1 : 0)
+T("Herald's Horn", ['upkeep'], "Herald's Horn#t", (ctx, item) => {
+	const s = ctx.s
+	const me = item.controller
+	const h = findPerm(s, item.iid)
+	const top = s.players[me].library[0]
+	if (!h || !top) return
+	if (rulesOf(s, top).types.includes('creature') && ofType(s, top, chosenType(h)) && yes(ctx, me, 'hh', `Herald's Horn: reveal ${cardName(s, top.card)} and put it into your hand?`, top.card)) H().move(s, top.iid, 'hand')
+})
+done("Herald's Horn")
+
+chooseType('Door of Destinies')
+trig('Door of Destinies', 'castSpell', 'Door#cast', (ctx, item) => {
+	const s = ctx.s
+	const d = findPerm(s, item.iid)
+	const spell = item.about !== undefined ? locate(s, item.about) : null
+	const card = spell?.obj.card ?? s.stack.find((it) => it.obj?.iid === item.about)?.card
+	if (d && card && ofType(s, { card }, chosenType(d))) addCounters(d, 'charge', 1 + annex(s, item.controller))
+}, { who: 'you', text: 'Whenever you cast a spell of the chosen type, put a charge counter on this artifact.' })
+BUFFS['Door of Destinies'] = (s, src, p) => {
+	const n = src.counters.charge ?? 0
+	return n && p.controller === src.controller && isCreature(s, p) && ofType(s, p, chosenType(src)) ? [n, n] : [0, 0]
+}
+done('Door of Destinies')
+
+patchRules('Unification', (r) => {
+	if (r.chapters?.[0]) r.chapters[0].compiled = named('Unification I', [{ kind: 'perm', filter: { types: ['creature'], not: [] }, min: 0, max: 1 }])
+	if (r.chapters?.[1]) r.chapters[1].compiled = named('Unification II')
+	if (allCompiled(r)) r.fullyAutomated = true
+})
+reg('Unification I', (ctx, item) => {
+	const s = ctx.s
+	const t = item.targets[0] ? findPerm(s, item.targets[0].id) : undefined
+	if (!t) return
+	const owner = t.owner
+	H().draw(s, owner, 2)
+	H().move(s, t.iid, 'library')
+	H().shuffle(s, owner)
+	log(s, `${cardName(s, t.card)} is shuffled into its owner's library.`)
+}, [{ kind: 'perm', filter: { types: ['creature'], not: [] }, min: 0, max: 1 }])
+reg('Unification II', (ctx, item) => {
+	const s = ctx.s
+	const me = item.controller
+	const pl = s.players[me]
+	const cs = [...pl.hand, ...pl.graveyard].filter((o) => rulesOf(s, o).subtypes.includes('Spacecraft'))
+	for (const id of pickCard(ctx, me, 'un', 'You may put a Spacecraft card from your hand or graveyard onto the battlefield', cs, 0, 1)) H().move(s, id, 'battlefield', { controller: me })
+})
+
+spell('Promise of Loyalty', (ctx, item) => {
+	const s = ctx.s
+	const me = item.controller
+	s.players.forEach((_, i) => {
+		const cs = mine(s, i, (p) => isCreature(s, p))
+		const [keep] = pickPerm(ctx, i, `pl${i}`, 'Promise of Loyalty: choose a creature to keep (it gets a vow counter); sacrifice the rest', cs, 1, 1, (p) => pt(s, p)[0] + pt(s, p)[1])
+		for (const p of cs) if (p !== keep) H().move(s, p.iid, 'graveyard', { cause: 'sacrifice' })
+		if (keep) {
+			addCounters(keep, 'vow', 1)
+			// in a duel, "can't attack you" means the opponent's creature can't attack at all
+			if (i !== me) keep.mods.push({ power: 0, toughness: 0, keywords: ['defender'], until: 'perm', note: 'vow' })
+		}
+	})
+})
+
+// 2 players: there's only one player to attack, so reselecting doesn't change anything.
+patchRules('Tuvok, Chief Tactical Officer', (r) => {
+	for (const t of r.triggers) t.compiled ??= { targets: [], effects: [] }
+	for (const t of r.triggers) t.conditional = false
+	if (allCompiled(r)) r.fullyAutomated = true
+})

@@ -29,6 +29,7 @@ import {
 	permName,
 	pt,
 	rulesOf,
+	COST_MODS,
 } from './state'
 import type { CardDef, Color, Format, GameState, Intent, Mana, ManualOp, Obj, Perm, Step, Target, Task, Zone } from './types'
 
@@ -225,14 +226,17 @@ function runDelayed(s: GameState, at: 'end' | 'cleanup' | 'endCombat' | 'upkeep'
 			}
 		} else if (d.kind === 'return') {
 			const l = locate(s, d.iid)
-			if (l && l.zone === 'exile') {
+			if (l && (l.zone === 'exile' || l.zone === 'graveyard')) {
 				moveCard(s, d.iid, 'battlefield', { controller: d.owner, manual: true })
 				log(s, `${cardName(s, l.obj.card)} returns to the battlefield.`)
 			}
 		} else if (d.kind === 'exile') {
 			if (findPerm(s, d.iid)) moveCard(s, d.iid, 'exile')
 		} else if (d.kind === 'bottom') {
-			if (findPerm(s, d.iid)) moveCard(s, d.iid, 'libraryBottom')
+			if (findPerm(s, d.iid)) {
+				moveCard(s, d.iid, 'libraryBottom')
+				if (d.draw && d.owner !== undefined) drawCards(s, d.owner, 1)
+			}
 		} else if (d.kind === 'control') {
 			const q = findPerm(s, d.iid)
 			if (q && d.owner !== undefined) q.controller = d.owner
@@ -575,6 +579,8 @@ export function spellCost(s: GameState, player: number, card: string, fromComman
 		if (q.controller !== player) continue
 		const cr = rulesOf(s, q).costReduction
 		if (cr && matches(s, cr.filter, { card, flipped: back }, player, player)) c = addCost(c, -cr.n)
+		const cm = COST_MODS[def(s, q.card).name]
+		if (cm) c = addCost(c, -cm(s, q, card))
 	}
 	return c
 }
@@ -982,13 +988,15 @@ function doActivate(ctx: Ctx) {
 	}
 	perm.used = { ...(perm.used ?? {}), [a.index]: (perm.used?.[a.index] ?? 0) + 1 }
 	const card = perm.card
+	let sacrificed: number | undefined
 	if (a.cost.sacrifice) {
 		const opts = s.battlefield.filter((q) => q.controller === p && q.iid !== iid && matches(s, a.cost.sacrifice!, q, p, p, undefined, q))
 		const [pick] = ctx.ask(p, { key: 'sacc', prompt: `${permName(s, perm)}: sacrifice ${a.cost.sacrifice.subtypes?.join(' or ') || a.cost.sacrifice.types.join(' or ') || 'a permanent'}`, options: opts.map((q) => ({ id: String(q.iid), label: permName(s, q), card: q.card, iid: q.iid, score: -def(s, q.card).cmc })), min: 1, max: 1, cards: true })
 		moveCard(s, Number(pick), 'graveyard', { cause: 'sacrifice' })
+		sacrificed = Number(pick)
 	}
 	if (a.cost.sacrificeSelf) moveCard(s, iid, 'graveyard', { cause: 'sacrifice' })
-	s.stack.push({ sid: s.nextId++, kind: 'ability', controller: p, card, iid, text: a.station ? `Station: +${x} charge` : a.text, ability: a.index, targets, x, manual: !a.compiled || !!a.cost.other })
+	s.stack.push({ sid: s.nextId++, kind: 'ability', controller: p, card, iid, text: a.station ? `Station: +${x} charge` : a.text, ability: a.index, targets, x, manual: !a.compiled || !!a.cost.other, about: sacrificed })
 	log(s, `${s.players[p].name} activates ${cardName(s, card)}${a.equip ? ' (equip)' : ''}${targets.length ? ` targeting ${targets.map((t) => targetName(s, t)).join(', ')}` : ''}.${a.cost.other ? ` (Pay by hand: ${a.cost.other}.)` : ''}`)
 	afterStackAdd(s, p)
 }

@@ -190,6 +190,11 @@ export function basePT(s: GameState, p: Perm): [number, number] {
 	return [num(face.power), num(face.toughness)]
 }
 
+/** Cost reductions the parser can't read, by source card name: (state, source, spell card id) → generic mana less. */
+export const COST_MODS: Record<string, (s: GameState, src: Perm, card: string) => number> = {}
+/** P/T-changing statics the parser can't read, by source card name: (state, source, creature) → [+power, +toughness]. */
+export const BUFFS: Record<string, (s: GameState, src: Perm, p: Perm) => [number, number]> = {}
+
 /** Keyword-granting statics the parser can't read, by source card name: (state, source, creature) → keywords. */
 export const GRANTS: Record<string, (s: GameState, src: Perm, p: Perm) => string[]> = {}
 
@@ -225,6 +230,12 @@ export function pt(s: GameState, p: Perm): [number, number] {
 		t += m.toughness
 	}
 	for (const q of s.battlefield) {
+		const b = BUFFS[def(s, q.card).name]
+		if (b) {
+			const [x, y] = b(s, q, p)
+			pw += x
+			t += y
+		}
 		const r = rulesOf(s, q)
 		for (const st of r.statics) {
 			if (!reached(q, st.threshold)) continue
