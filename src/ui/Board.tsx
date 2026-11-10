@@ -74,7 +74,10 @@ export function Board(props: BoardProps) {
 	const [muted, setMutedState] = useState(isMuted())
 	const boardRef = useRef<HTMLDivElement>(null)
 	useMotion(boardRef, s)
+	/** Card enlarged beside the mouse pointer (stage coordinates on the table, screen coordinates on touch). */
 	const [zoom, setZoom] = useState<{ iid: number; x: number; y: number } | null>(null)
+	/** Card enlarged by a long press: stays until the next tap. */
+	const [pinned, setPinned] = useState<number | null>(null)
 	/** Hovering a card: show it in the viewer and enlarged beside the pointer (table layout). */
 	const peek = (iid: number, e?: MouseEvent<HTMLDivElement>) => {
 		setHover(iid)
@@ -87,13 +90,24 @@ export function Board(props: BoardProps) {
 	const zoomAt = (iid: number, r: DOMRect) => {
 		const b = boardRef.current
 		if (!b) return
-		if (layout !== 'console') return setZoom({ iid, x: 0, y: 0 })
+		if (layout !== 'console') {
+			// beside the card, on whichever side has room
+			const w = Math.min(320, window.innerWidth * 0.46)
+			const h = w * 1.395
+			const x = r.left + r.width / 2 < window.innerWidth / 2 ? Math.min(window.innerWidth - w - 6, r.right + 12) : Math.max(6, r.left - w - 12)
+			const y = Math.max(6, Math.min(window.innerHeight - h - 6, r.top + r.height / 2 - h / 2))
+			return setZoom({ iid, x, y })
+		}
 		const br = b.getBoundingClientRect()
 		const k = br.width / 1600 || 1
-		const cx = (r.left + r.width / 2 - br.left) / k
+		// beside the card (not on top of it), so the pointer can move along a row
+		const W = 400
+		const Hh = 558
+		const left = (r.left - br.left) / k
+		const right = (r.right - br.left) / k
 		const cy = (r.top + r.height / 2 - br.top) / k
-		const x = Math.max(4, Math.min(1600 - 284, cx - 140))
-		const y = Math.max(4, Math.min(1000 - 394, cy - 195))
+		const x = right + 16 + W <= 1600 ? right + 16 : Math.max(4, left - 16 - W)
+		const y = Math.max(4, Math.min(1000 - Hh - 4, cy - Hh / 2))
 		setZoom({ iid, x, y })
 	}
 	const unpeek = () => {
@@ -106,6 +120,13 @@ export function Board(props: BoardProps) {
 	const touchHandlers = {
 		onPointerDownCapture: (e: PointerEvent<HTMLDivElement>) => {
 			touchy.current = e.pointerType !== 'mouse'
+			if (pinned !== null) {
+				// the tap that puts the enlarged card away does nothing else
+				e.stopPropagation()
+				setPinned(null)
+				swallowClick.current = true
+				return
+			}
 			if (!touchy.current) return
 			const el = (e.target as HTMLElement).closest<HTMLElement>('[data-iid]')
 			downIid.current = el ? Number(el.dataset.iid) : null
@@ -117,11 +138,14 @@ export function Board(props: BoardProps) {
 			p.timer = window.setTimeout(() => {
 				p.shown = true
 				setHover(iid)
-				zoomAt(iid, ((el.querySelector('.cardface') as HTMLElement | null) ?? el).getBoundingClientRect())
+				setZoom(null)
+				setPinned(iid)
 			}, 380)
 			press.current = p
 		},
 		onPointerMove: (e: PointerEvent<HTMLDivElement>) => {
+			// an iPad with a trackpad or mouse hovers like a computer
+			if (e.pointerType === 'mouse') touchy.current = false
 			const p = press.current
 			if (p && !p.shown && Math.hypot(e.clientX - p.x, e.clientY - p.y) > 10) {
 				window.clearTimeout(p.timer)
@@ -134,7 +158,6 @@ export function Board(props: BoardProps) {
 			if (p) {
 				window.clearTimeout(p.timer)
 				if (p.shown) {
-					setZoom(null)
 					swallowClick.current = true
 					return
 				}
@@ -148,7 +171,6 @@ export function Board(props: BoardProps) {
 		},
 		onPointerCancel: () => {
 			if (press.current) window.clearTimeout(press.current.timer)
-			if (press.current?.shown) setZoom(null)
 			press.current = null
 		},
 		onClickCapture: (e: MouseEvent<HTMLDivElement>) => {
@@ -162,6 +184,12 @@ export function Board(props: BoardProps) {
 		},
 	}
 	const lastTap = useRef<{ iid: number; at: number } | null>(null)
+	useEffect(() => {
+		if (pinned === null) return
+		const key = (e: KeyboardEvent) => e.key === 'Escape' && setPinned(null)
+		window.addEventListener('keydown', key)
+		return () => window.removeEventListener('keydown', key)
+	}, [pinned])
 	useEffect(() => setZoom(null), [s.log.length, s.pending.kind])
 	const H = props.hint
 	const hb = (label: string) => (hintMatch(H, label) ? 'hint' : '')
@@ -659,8 +687,14 @@ export function Board(props: BoardProps) {
 		return (
 			<div className={`pocket ${props.tablet ? 'tablet' : ''}`} ref={boardRef} onClick={() => setHover(null)} onPointerDown={unlockAudio} {...touchHandlers}>
 				{zoom && locateAny(s, zoom.iid) && !(props.hideHand && s.players[me].hand.some((o) => o.iid === zoom.iid)) && (
-					<div className="zoom zoom-center">
+					<div className="zoom zoom-side" style={{ left: zoom.x, top: zoom.y }}>
 						<CardFaceView def={def(s, locateAny(s, zoom.iid)!.obj.card)} back={(locateAny(s, zoom.iid)!.obj as Perm).flipped} className="big" />
+					</div>
+				)}
+				{pinned !== null && locateAny(s, pinned) && !(props.hideHand && s.players[me].hand.some((o) => o.iid === pinned)) && (
+					<div className="zoom-pin" onClick={() => setPinned(null)}>
+						<CardFaceView def={def(s, locateAny(s, pinned)!.obj.card)} back={(locateAny(s, pinned)!.obj as Perm).flipped} className="big" />
+						<span className="zoom-pin-hint">Tap anywhere to close</span>
 					</div>
 				)}
 				{props.coach &&
@@ -716,6 +750,12 @@ export function Board(props: BoardProps) {
 			{zoom && locateAny(s, zoom.iid) && !(props.hideHand && s.players[me].hand.some((o) => o.iid === zoom.iid)) && (
 				<div className="zoom" style={{ left: zoom.x, top: zoom.y }}>
 					<CardFaceView def={def(s, locateAny(s, zoom.iid)!.obj.card)} back={(locateAny(s, zoom.iid)!.obj as Perm).flipped} className="big" />
+				</div>
+			)}
+			{pinned !== null && locateAny(s, pinned) && !(props.hideHand && s.players[me].hand.some((o) => o.iid === pinned)) && (
+				<div className="zoom-pin" onClick={() => setPinned(null)}>
+					<CardFaceView def={def(s, locateAny(s, pinned)!.obj.card)} back={(locateAny(s, pinned)!.obj as Perm).flipped} className="big" />
+					<span className="zoom-pin-hint">Tap anywhere to close</span>
 				</div>
 			)}
 			<div className="main">

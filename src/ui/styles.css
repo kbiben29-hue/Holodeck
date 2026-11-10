@@ -1510,8 +1510,8 @@ span.zone {
 	animation: zoomin 0.12s ease-out;
 }
 .zoom .cardface.big {
-	width: 280px;
-	height: 390px;
+	width: 400px;
+	height: 558px;
 }
 .zoom.tapped .cardface.big {
 	transform: none;
@@ -2246,16 +2246,62 @@ body {
 .touch .board .ph {
 	padding: 6px 10px;
 }
-.zoom.zoom-center {
+.zoom.zoom-side {
 	position: fixed;
-	left: 50%;
-	top: 45%;
-	translate: -50% -50%;
 	z-index: 600;
 }
-.zoom.zoom-center .cardface.big {
-	width: min(72vw, 340px);
-	height: calc(min(72vw, 340px) * 1.395);
+.zoom.zoom-side .cardface.big {
+	width: min(46vw, 320px);
+	height: calc(min(46vw, 320px) * 1.395);
+}
+/* long press: the card stays enlarged until the next tap */
+.zoom-pin {
+	position: fixed;
+	inset: 0;
+	z-index: 650;
+	display: flex;
+	flex-direction: column;
+	align-items: center;
+	justify-content: center;
+	gap: 14px;
+	background: rgba(4, 6, 14, 0.72);
+	backdrop-filter: blur(3px);
+	-webkit-backdrop-filter: blur(3px);
+	animation: pin-in 0.16s ease-out;
+}
+.zoom-pin .cardface.big {
+	width: 560px;
+	height: 781px;
+	max-height: 86%;
+	max-width: 62%;
+	aspect-ratio: 488 / 680;
+	filter: drop-shadow(0 16px 50px #000);
+}
+.board .zoom-pin .cardface.big {
+	width: auto;
+	height: 860px;
+	max-width: none;
+	max-height: none;
+}
+.pocket .zoom-pin .cardface.big {
+	width: min(88vw, 520px, calc(80dvh * 0.7176));
+	height: auto;
+	max-width: none;
+	max-height: none;
+}
+.zoom-pin-hint {
+	font-size: 15px;
+	letter-spacing: 0.08em;
+	text-transform: uppercase;
+	color: var(--dim);
+}
+.board .zoom-pin-hint {
+	font-size: 22px;
+}
+@keyframes pin-in {
+	from {
+		opacity: 0;
+	}
 }
 
 /* iPad held upright: the touch layout with room to breathe */
