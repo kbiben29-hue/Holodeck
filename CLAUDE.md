@@ -36,6 +36,9 @@ npm run build
   suggested move into a `Hint`). `src/ui/lessons.ts` — per-deck `PLANS`, `COMBOS` (alerts in coached games),
   `DRILLS` (built with `scenario`; `lessons.test.ts` solves each one). Lesson text is our own wording.
 - `src/ui/sfx.ts` — synthesized sounds (Web Audio), mute in the top bar.
+- Pacing: `withFrames(() => tryApply(…))` returns the in-between states one move auto-passed through (`snap` in
+  `settle`); App plays them back one beat each (`ui/prefs.ts` Animation: Full/Fast/Off, click skips) before the result.
+- `src/ui/Arrows.tsx` — SVG arrows: stack targets (`data-sid` → `data-iid`/`data-life`), attacks, blocks, drag-to-block.
 - `src/ui/motion.ts` — Arena-style motion: diffs `[data-iid]` elements between renders (FLIP moves, draws from
   `data-anchor` piles, ghosts to the graveyard, lunges, floating damage/life numbers). Keep `data-iid` unique per card.
 - `src/ui/Board.tsx` — console (1600×1000 scaled) and pocket (phone) layouts; `src/App.tsx` — sessions,
