@@ -2137,29 +2137,34 @@ button.mini {
 		stroke-dashoffset: 1200;
 	}
 }
-.arrow.mine path,
-.ah.mine {
+.arrow.mine path {
 	stroke: #7fb8ff;
+}
+.ah.mine {
 	fill: #7fb8ff;
 }
-.arrow.theirs path,
-.ah.theirs {
+.arrow.theirs path {
 	stroke: #ff8a5c;
+}
+.ah.theirs {
 	fill: #ff8a5c;
 }
-.arrow.attack path,
-.ah.attack {
+.arrow.attack path {
 	stroke: #ff4b3e;
+}
+.ah.attack {
 	fill: #ff4b3e;
 }
-.arrow.block path,
-.ah.block {
+.arrow.block path {
 	stroke: #63b3ff;
+}
+.ah.block {
 	fill: #63b3ff;
 }
-.arrow.plan path,
-.ah.plan {
+.arrow.plan path {
 	stroke: #f3d27a;
+}
+.ah.plan {
 	fill: #f3d27a;
 }
 .arrow.plan .arrow-line {

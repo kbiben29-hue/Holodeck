@@ -156,7 +156,7 @@ export default function App() {
 		const all = framesOf.current.get(state) ?? []
 		framesOf.current.delete(state)
 		const beat = beatFor(pace)
-		const fr = all.filter((f) => f.log.length < state.log.length || f.stack.length !== state.stack.length)
+		const fr = all.filter((f) => f.log.length < state.log.length || f.stack.length !== state.stack.length || f.step !== state.step)
 		if (!beat || !fr.length) {
 			setShown(null)
 			return

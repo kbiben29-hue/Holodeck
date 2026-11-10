@@ -497,9 +497,11 @@ export function Board(props: BoardProps) {
 
 	const promptBar = (
 		<div className={`prompt ${prompt.mine ? 'mine' : ''}`}>
-			<span className="ptext">{attachFrom !== null ? 'Click the permanent to attach it to (or click it again to cancel).' : blockFrom !== null ? 'Now click (or drop it on) the attacker it should block.' : prompt.text}</span>
+			<span className="ptext">{props.busy ? (s.log[s.log.length - 1] ?? '') : attachFrom !== null ? 'Click the permanent to attach it to (or click it again to cancel).' : blockFrom !== null ? 'Now click (or drop it on) the attacker it should block.' : prompt.text}</span>
 			<span className="pbtns">
-				{attachFrom !== null ? (
+				{props.busy ? (
+					<button onClick={() => props.onSkip?.()}>Skip ▸▸</button>
+				) : attachFrom !== null ? (
 					<button onClick={() => setAttachFrom(null)}>Cancel</button>
 				) : (
 					prompt.buttons.map((b) => (
