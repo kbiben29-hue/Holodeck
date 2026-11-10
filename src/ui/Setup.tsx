@@ -1,6 +1,6 @@
 import { useState } from 'react'
 import { APP_NAME } from '../config'
-import { DECKS } from '../data/decks'
+import { DECKS, sixtyCards } from '../data/decks'
 import { slug, type CardPool } from '../data/scryfall'
 import { FORMATS } from '../engine/engine'
 import type { Format } from '../engine/types'
@@ -49,6 +49,12 @@ export function Setup({ pool, loading, onReload, onStart, joinCode, resume, init
 					</button>
 				)
 			})}
+			{FORMATS[format].noCommander ? (
+				<details className="leader sixty-list">
+					<summary>The 60 cards</summary>
+					{sixtyList(DECKS.find((x) => x.id === decks[i])!)}
+				</details>
+			) : (
 			<div className="leader">
 				Commander:
 				{(['commander', 'alt'] as const).map((l) => {
@@ -60,8 +66,32 @@ export function Setup({ pool, loading, onReload, onStart, joinCode, resume, init
 					)
 				})}
 			</div>
+			)}
 		</div>
 	)
+
+	/** What the 60-card cut of a deck holds, grouped like a decklist. */
+	const sixtyList = (d: (typeof DECKS)[number]) => {
+		const cards = pool ? sixtyCards(d, pool.cards, slug) : []
+		if (!cards.length) return <p className="dim small">Loading the cards…</p>
+		const counts = new Map<string, number>()
+		for (const n of cards) counts.set(n, (counts.get(n) ?? 0) + 1)
+		const kind = (n: string) => {
+			const t = pool?.cards[slug(n)]?.typeLine ?? ''
+			return /Land/.test(t) ? 'Lands' : /Creature/.test(t) ? 'Creatures' : 'Other spells'
+		}
+		return (['Creatures', 'Other spells', 'Lands'] as const).map((k) => {
+			const names = [...counts].filter(([n]) => kind(n) === k)
+			return (
+				<div key={k} className="small">
+					<b>
+						{k} ({names.reduce((t, [, c]) => t + c, 0)})
+					</b>
+					<div className="dim">{names.map(([n, c]) => (c > 1 ? `${c} ${n}` : n)).join(' · ')}</div>
+				</div>
+			)
+		})
+	}
 
 	const start = (extra: Partial<SetupResult> = {}) => {
 		localStorage.setItem(NAME_KEY, names[0])
@@ -213,6 +243,7 @@ export function Setup({ pool, loading, onReload, onStart, joinCode, resume, init
 							</button>
 						</section>
 						<p className="dim small">
+							{format === 'sixty' && <>Classic 60-card: each deck is cut to 60 cards (24 lands, 36 spells on a normal curve, both legends included as regular cards, anything that needs a commander left out). 20 life, no command zone, standard Magic rules. </>}
 							Duel Commander is the usual 2-player way to play Commander: 20 life and no commander damage. Its ban list is not used, so the decks play as they come out of the box. Card images and text come from Scryfall. This is a fan project; it isn’t affiliated with Wizards of the Coast or Paramount.
 						</p>
 					</>

@@ -14,6 +14,9 @@ standing; card text and images are loaded from [Scryfall](https://scryfall.com) 
 - **Formats:** Duel Commander (20 life, no commander damage, the usual 2-player Commander), 1v1 Commander
   (30 life, 21 commander damage) or classic 40 life. The Duel Commander ban list isn't used, so the decks
   play as they come out of the box.
+- **Classic 60-card:** regular Magic with the same cards. Each deck is cut to 60 (24 lands, 36 spells on a
+  normal curve, both legends shuffled in as regular cards, cards that need a commander left out); 20 life,
+  no command zone. Open "The 60 cards" under a deck to see the list.
 - Runs on computers, iPads (the table scaled to fit) and phones (a touch layout). Switch layouts in the menu.
   Every game saves automatically, and you can undo moves when playing locally.
 

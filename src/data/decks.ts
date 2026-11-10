@@ -423,3 +423,80 @@ export function deckCards(d: StarterDeck, leader: 'commander' | 'alt' | 'both' =
 	for (const [b, n] of d.basics) for (let i = 0; i < n; i++) rest.push(b)
 	return { commanders, cards: rest }
 }
+
+// ───────── Classic 60-card cut ─────────
+
+/** Minimal card info the 60-card cut looks at (a CardDef works). */
+interface CutInfo {
+	name: string
+	cmc: number
+	typeLine: string
+	oracle: string
+	produces?: string[]
+	back?: { oracle?: string }
+}
+
+/** Spells by mana value for the 36 non-land cards (6+ shares the last slot). */
+const CURVE = [0, 4, 9, 9, 7, 4, 3]
+export const SIXTY_LANDS = 24
+const MAX_NONBASIC = 10
+const MAX_ROCKS = 3
+
+/** True for text that only makes sense with a commander (Command Tower, Arcane Signet, Path of Ancestry…). */
+export function needsCommander(c: CutInfo): boolean {
+	const text = `${c.oracle}\n${c.back?.oracle ?? ''}`.split(c.name).join('CARDNAME')
+	return /\bcommanders?\b/i.test(text)
+}
+
+/**
+ * A 60-card deck built from one of the Commander decks, for classic Magic rules: 24 lands (the deck's
+ * dual and utility lands first, then its basics in the same proportions) and 36 spells picked along a
+ * normal curve, always including both legends. Cards that refer to a commander are left out.
+ * Cards with no data yet count as 3-mana spells. Deterministic: same pool, same 60.
+ */
+export function sixtyCards(d: StarterDeck, pool: Record<string, CutInfo | undefined>, slugOf: (n: string) => string): string[] {
+	const info = (n: string): CutInfo => pool[slugOf(n)] ?? { name: n, cmc: 3, typeLine: '', oracle: '' }
+	const all = [d.commander, ...d.cards]
+	const isLand = (n: string) => /\bLand\b/.test(info(n).typeLine)
+	const usable = all.filter((n) => !needsCommander(info(n)))
+
+	// lands
+	const nonbasic = usable.filter(isLand)
+	const colorsMade = (n: string) => (info(n).produces ?? []).filter((m) => d.colors.includes(m)).length
+	const lands = [...nonbasic].sort((a, b) => Math.min(colorsMade(b), 2) - Math.min(colorsMade(a), 2)).slice(0, MAX_NONBASIC)
+	const basicTotal = d.basics.reduce((t, [, n]) => t + n, 0)
+	const need = SIXTY_LANDS - lands.length
+	const counts = d.basics.map(([b, n]) => [b, Math.floor((n * need) / basicTotal)] as [string, number])
+	for (let i = 0; counts.reduce((t, [, n]) => t + n, 0) < need; i++) counts[i % counts.length][1]++
+	for (const [b, n] of counts) for (let i = 0; i < n; i++) lands.push(b)
+
+	// spells
+	const spells = usable.filter((n) => !isLand(n))
+	const bucket = (n: string) => Math.max(1, Math.min(6, Math.round(info(n).cmc)))
+	const isRock = (n: string) => {
+		const c = info(n)
+		return /\bArtifact\b/.test(c.typeLine) && !/\bCreature\b/.test(c.typeLine) && (c.produces?.length ?? 0) > 0
+	}
+	const picked: string[] = []
+	const left = [0, ...CURVE.slice(1)]
+	let rocks = 0
+	const take = (n: string) => {
+		picked.push(n)
+		left[bucket(n)]--
+		if (isRock(n)) rocks++
+	}
+	for (const n of [d.commander, d.alt]) if (spells.includes(n)) take(n)
+	for (const n of spells) {
+		if (picked.includes(n) || left[bucket(n)] <= 0) continue
+		if (isRock(n) && rocks >= MAX_ROCKS) continue
+		take(n)
+	}
+	// short somewhere on the curve: fill with the cheapest cards left
+	const rest = spells.filter((n) => !picked.includes(n)).sort((a, b) => info(a).cmc - info(b).cmc)
+	for (const n of rest) {
+		if (picked.length >= 60 - SIXTY_LANDS) break
+		if (!(isRock(n) && rocks >= MAX_ROCKS)) take(n)
+	}
+	for (const n of rest) if (picked.length < 60 - SIXTY_LANDS && !picked.includes(n)) take(n)
+	return [...picked, ...lands]
+}

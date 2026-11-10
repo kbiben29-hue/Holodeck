@@ -469,7 +469,7 @@ export function Board(props: BoardProps) {
 						<span className="pile-n">{pl.exile.length}</span>
 					</div>
 				</div>
-				<div className="pile cmdpile" title="Command zone">
+				{!s.format.noCommander && <div className="pile cmdpile" title="Command zone">
 					<span className="pile-label">Command{pl.command.some((o) => pl.commanderCasts[o.card]) ? ` +${commanderTax(s, p, pl.command[0]?.card ?? '')}` : ''}</span>
 					<div className="pile-card" data-anchor={`command-${p}`}>
 						{pl.command.length ? (
@@ -478,7 +478,7 @@ export function Board(props: BoardProps) {
 							<div className="pile-empty" />
 						)}
 					</div>
-				</div>
+				</div>}
 			</div>
 		)
 	}
@@ -1387,7 +1387,7 @@ function MenuModal(props: BoardProps & { me: number; tool: (m: ManualOp) => bool
 					<h4>Board</h4>
 					<button onClick={props.openTokens}>Create tokens…</button>
 					<button onClick={() => tool({ op: 'untapAll', player: me })}>Untap all mine</button>
-					<button onClick={() => props.openZone({ player: me, zone: 'command' })}>Command zone…</button>
+					{!s.format.noCommander && <button onClick={() => props.openZone({ player: me, zone: 'command' })}>Command zone…</button>}
 				</section>
 				<section>
 					<h4>Life & counters</h4>
@@ -1454,7 +1454,7 @@ function MenuModal(props: BoardProps & { me: number; tool: (m: ManualOp) => bool
 					<button onClick={() => (confirm ? (props.send({ type: 'concede', player: me }), close()) : setConfirm(true))}>{confirm ? 'Really concede?' : 'Concede'}</button>
 					<button onClick={props.onMenu}>Leave game (it’s saved)</button>
 					<p className="dim">
-						{s.format.name}: {s.format.life} life{s.format.commanderDamage ? ', 21 commander damage' : ', no commander damage'}. Double-click a land to tap it for mana. Everything the game can’t do by itself, you do with these tools — like at a real table.
+						{s.format.name}: {s.format.life} life{s.format.noCommander ? ', 60-card decks, no commander' : s.format.commanderDamage ? ', 21 commander damage' : ', no commander damage'}. Double-click a land to tap it for mana. Everything the game can’t do by itself, you do with these tools — like at a real table.
 					</p>
 				</section>
 			</div>

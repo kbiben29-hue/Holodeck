@@ -39,6 +39,7 @@ export const FORMATS: Record<Format['id'], Format> = {
 	duel: { id: 'duel', name: 'Duel Commander', life: 20, commanderDamage: false, freeMulligan: false },
 	oneVsOne: { id: 'oneVsOne', name: '1v1 Commander', life: 30, commanderDamage: true, freeMulligan: false },
 	classic: { id: 'classic', name: 'Classic Commander (40 life)', life: 40, commanderDamage: true, freeMulligan: true },
+	sixty: { id: 'sixty', name: 'Classic 60-card', life: 20, commanderDamage: false, freeMulligan: false, noCommander: true },
 }
 
 export interface Setup {
@@ -80,6 +81,8 @@ export function newGame(setup: Setup): GameState {
 	setup.players.forEach((p, i) => {
 		const identity = new Set<Color>()
 		for (const c of p.commanders) for (const col of setup.cards[c]?.identity ?? []) identity.add(col)
+		// no commander (60-card games): "your colours" are the deck's colours
+		if (!p.commanders.length) for (const c of p.deck) for (const col of setup.cards[c]?.identity ?? []) identity.add(col)
 		const library: Obj[] = rng.shuffle(p.deck.map((card) => ({ iid: nextId++, card, owner: i })))
 		const command: Obj[] = p.commanders.map((card) => ({ iid: nextId++, card, owner: i, commander: true }))
 		s.players.push({

@@ -241,12 +241,14 @@ export interface Task {
 }
 
 export interface Format {
-	id: 'duel' | 'oneVsOne' | 'classic'
+	id: 'duel' | 'oneVsOne' | 'classic' | 'sixty'
 	name: string
 	life: number
 	commanderDamage: boolean
 	/** The first mulligan is free (Commander rule 103.5c applies to multiplayer; on by default). */
 	freeMulligan: boolean
+	/** Classic Magic: a 60-card deck with no commander or command zone. */
+	noCommander?: boolean
 }
 
 export interface GameState {

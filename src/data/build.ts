@@ -1,8 +1,8 @@
 // Turns deck choices into a new game, using whatever card data has been loaded.
 
-import { newGame } from '../engine/engine'
+import { FORMATS, newGame } from '../engine/engine'
 import type { CardDef, Format, GameState } from '../engine/types'
-import { DECKS, deckCards } from './decks'
+import { DECKS, deckCards, sixtyCards } from './decks'
 import { missingDef, slug } from './scryfall'
 
 export interface PlayerChoice {
@@ -23,6 +23,7 @@ export function buildGame(pool: Record<string, CardDef>, players: PlayerChoice[]
 	return newGame({
 		players: players.map((p) => {
 			const d = DECKS.find((x) => x.id === p.deck) ?? DECKS[0]
+			if (FORMATS[format].noCommander) return { name: p.name, commanders: [], deck: ids(sixtyCards(d, pool, slug)), bot: p.bot }
 			const { commanders, cards: rest } = deckCards(d, p.leader)
 			return { name: p.name, commanders: ids(commanders), deck: ids(rest), bot: p.bot }
 		}),

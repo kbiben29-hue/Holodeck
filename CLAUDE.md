@@ -29,6 +29,7 @@ npm run build
 - `src/engine/mana.ts` — costs and the payment solver. `engine.ts` — flow, priority, combat, SBAs,
   commander rules, table tools. Smart stops: players auto-pass when they can't do anything (`wantsStop`).
 - `src/bot/bot.ts` — greedy "Ensign" bot. `src/data/decks.ts` — the four decklists (names only).
+- `sixtyCards` in `src/data/decks.ts` — the Classic 60-card cut (format `sixty`, `noCommander`: no command zone).
 - `src/data/scryfall.ts` — loads cards + tokens from Scryfall on the device (prefers Star Trek sets), caches
   in localStorage. Card data is never committed or bundled.
 - `src/engine/scenario.ts` — build a position directly (drills, tests). `startrek.fixture.ts` — test stand-ins.

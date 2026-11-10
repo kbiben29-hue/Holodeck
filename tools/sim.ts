@@ -8,7 +8,10 @@ const reasons: Record<string, number> = {}
 let turns = 0
 let wins = [0, 0]
 for (let seed = 1; seed <= n; seed++) {
-	let s = newGame({ players: [{ name: 'UW', ...FIX_DECKS.uw, bot: true }, { name: 'RG', ...FIX_DECKS.rg, bot: true }], cards: { ...FIX }, seed, format: (['duel', 'oneVsOne', 'classic'] as const)[seed % 3] })
+	const format = (['duel', 'oneVsOne', 'classic', 'sixty'] as const)[seed % 4]
+	// Classic 60-card: the commander shuffled in with 59 other cards, no command zone
+	const sixty = (d: { commanders: string[]; deck: string[] }) => (format === 'sixty' ? { commanders: [], deck: [...d.commanders, ...d.deck.filter((_, i) => i % 5 !== 4)].slice(0, 60) } : d)
+	let s = newGame({ players: [{ name: 'UW', ...sixty(FIX_DECKS.uw), bot: true }, { name: 'RG', ...sixty(FIX_DECKS.rg), bot: true }], cards: { ...FIX }, seed, format })
 	let steps = 0
 	while (s.pending.kind !== 'over' && s.turn <= 80 && steps < 20000) {
 		const next = botStep(s, s.pending.player)
