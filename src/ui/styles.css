@@ -2260,8 +2260,8 @@ body {
 
 /* iPad held upright: the touch layout with room to breathe */
 .pocket.tablet {
-	--card-w: 76px;
-	--card-h: 106px;
+	--card-w: 90px;
+	--card-h: 126px;
 	padding: env(safe-area-inset-top) 10px env(safe-area-inset-bottom);
 	gap: 8px;
 	font-size: 16px;
@@ -2292,12 +2292,12 @@ body {
 	--card-h: 56px;
 }
 .pocket.tablet .row {
-	min-height: 112px;
+	min-height: 132px;
 	gap: 8px;
 	padding: 4px;
 }
 .pocket.tablet .row.lower {
-	min-height: 108px;
+	min-height: 128px;
 	gap: 12px;
 }
 .pocket.tablet .ptbox {
@@ -2323,8 +2323,8 @@ body {
 	font-size: 15px;
 }
 .pocket.tablet .hand .cardface {
-	--card-w: 104px;
-	--card-h: 145px;
+	--card-w: 116px;
+	--card-h: 162px;
 }
 .pocket.tablet .menu-btn {
 	font-size: 24px;
