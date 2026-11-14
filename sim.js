@@ -339,6 +339,18 @@
       out.effects.push({ e: "bounce", t: addTarget(out, spec) });
       return true;
     }
+    if ((m = s.match(new RegExp(`^Put (${TGT}) (?:on top|on the bottom|second from the top)? ?(?:of|into) (?:its owner's|their owner's) library(?: (second from the top|third from the top))?$`, "i"))) || (m = s.match(new RegExp(`^Put (${TGT}) (on top|on the bottom) of (?:its owner's|their owner's) library$`, "i")))) {
+      const spec = parseTarget(m[1]);
+      if (!spec || spec.kind !== "perm") return false;
+      out.effects.push({ e: "tuck", t: addTarget(out, spec), where: /bottom/i.test(s) ? "bottom" : "top" });
+      return true;
+    }
+    if (m = s.match(new RegExp(`^(${TGT})'s owner puts it on (?:the )?top or bottom of their library$`, "i"))) {
+      const spec = parseTarget(m[1]);
+      if (!spec || spec.kind !== "perm") return false;
+      out.effects.push({ e: "tuck", t: addTarget(out, spec), where: "either" });
+      return true;
+    }
     if (m = s.match(new RegExp(`^(Tap|Untap) (${TGT})$`, "i"))) {
       const spec = parseTarget(m[2]);
       if (!spec || spec.kind !== "perm") return false;
@@ -744,12 +756,22 @@
     if (hit) return hit;
     const face = flipped && def2.back ? def2.back : def2;
     const r = parse({ name: face.name, oracle: face.oracle, typeLine: face.typeLine });
-    for (const o of overrides.get(face.name) ?? [])
+    for (const o of overrides.get(face.name) ?? []) {
+      let hit2 = false;
       for (const t of r.triggers)
         if (o.events.includes(t.event)) {
           t.compiled = o.compiled;
           t.conditional = false;
+          hit2 = true;
         }
+      if (!hit2) {
+        const word = { attacks: /attack/i, etb: /enter/i, dies: /dies/i, landfall: /land/i, upkeep: /upkeep/i, endStep: /end step/i };
+        for (const event of o.events) {
+          const line = face.oracle.split("\n").find((l) => word[event]?.test(l)) ?? face.name;
+          r.triggers.push({ index: r.triggers.length, event, text: line, effectText: "", compiled: o.compiled });
+        }
+      }
+    }
     if (overrides.has(face.name)) r.fullyAutomated = r.triggers.every((t) => t.compiled) && (r.fullyAutomated || r.triggers.length > 0);
     for (const f of patches.get(face.name) ?? []) f(r);
     cache.set(key, r);
@@ -1914,6 +1936,16 @@
         case "bounce":
           for (const p of tperms(e.t)) H().move(s, p.iid, "hand");
           break;
+        case "tuck":
+          for (const p of tperms(e.t)) {
+            let where = e.where;
+            if (where === "either") {
+              const mine2 = p.owner === me;
+              where = ctx.ask(p.owner, { key: k + "tk" + p.iid, prompt: `Put ${permName(s, p)} on the top or the bottom of your library?`, options: [{ id: "top", label: "Top", score: mine2 ? 1 : 0 }, { id: "bottom", label: "Bottom", score: mine2 ? 0 : 1 }], min: 1, max: 1 })[0];
+            }
+            H().move(s, p.iid, where === "top" ? "library" : "libraryBottom");
+          }
+          break;
         case "tap":
           for (const p of tperms(e.t)) H().setTapped(s, p, !e.untap);
           break;
@@ -2645,7 +2677,8 @@
     c.used = { ...c.used, exert: s.turn };
     c.skipUntap = true;
     for (const p of mine(s, me)) if (p.iid !== c.iid && isCreature(s, p)) p.tapped = false;
-    s.extraCombats = (s.extraCombats ?? 0) + 1;
+    s.extraCombatsNow = (s.extraCombatsNow ?? 0) + 1;
+    log(s, "Combat Celebrant is exerted: the other creatures untap and there will be an additional combat phase.");
   });
   done("Combat Celebrant");
   act("Professional Face-Breaker", /Exile the top card/, "Face-Breaker#a", (ctx, item) => {
@@ -3232,43 +3265,43 @@
   }
   function moveCard(s, iid, to, opts = {}) {
     const before = findPerm(s, iid);
-    const snap = before ? clone(before) : null;
+    const snap2 = before ? clone(before) : null;
     const gear = before ? s.battlefield.filter((q) => q.attachedTo === iid).map((q) => clone(q)) : [];
     const d = detach(s, iid);
     if (!d) return;
     const { obj, from } = d;
     let dest = to;
-    if (obj.commander && !opts.manual && from !== "command" && ["graveyard", "exile", "hand", "library", "libraryBottom"].includes(to)) dest = "command";
-    if (snap) {
-      for (const q of s.battlefield) if (q.mods.some((m) => m.note === `while:${snap.iid}`)) q.mods = q.mods.filter((m) => m.note !== `while:${snap.iid}`);
-      if (isCreatureSnap(s, snap)) (s.lastPower ??= {})[snap.iid] = pt(s, { ...snap, controller: snap.controller })[0];
-      for (const k of Object.keys(snap.counters)) if (k.startsWith("holding:")) {
+    if (obj.commander && !opts.manual && from !== "command" && ["graveyard", "exile", "library", "libraryBottom"].includes(to)) dest = "command";
+    if (snap2) {
+      for (const q of s.battlefield) if (q.mods.some((m) => m.note === `while:${snap2.iid}`)) q.mods = q.mods.filter((m) => m.note !== `while:${snap2.iid}`);
+      if (isCreatureSnap(s, snap2)) (s.lastPower ??= {})[snap2.iid] = pt(s, { ...snap2, controller: snap2.controller })[0];
+      for (const k of Object.keys(snap2.counters)) if (k.startsWith("holding:")) {
         const held = Number(k.slice(8));
         const l = locate(s, held);
         if (l && l.zone === "exile") moveCard(s, held, "battlefield", { controller: l.obj.owner, manual: true });
       }
-      if (to === "graveyard" && isCreatureSnap(s, snap)) {
+      if (to === "graveyard" && isCreatureSnap(s, snap2)) {
         ;
-        (s.diedThisTurn ??= {})[snap.iid] = s.turn;
-        for (const m of snap.mods) if (m.note?.startsWith("fought:")) drawCards(s, Number(m.note.slice(7)), 1);
-        fire(s, snap, "dies");
+        (s.diedThisTurn ??= {})[snap2.iid] = s.turn;
+        for (const m of snap2.mods) if (m.note?.startsWith("fought:")) drawCards(s, Number(m.note.slice(7)), 1);
+        fire(s, snap2, "dies");
         for (const q of gear) for (const { t, index } of triggersOf(s, q, "dies")) if (t.equipped) queue(s).push({ iid: q.iid, card: q.card, controller: q.controller, index });
         for (const q of s.battlefield)
           for (const { t, index } of triggersOf(s, q, "otherDies"))
-            if (t.filter && matches(s, t.filter, snap, q.controller, snap.controller, q.iid, snap)) queue(s).push({ iid: q.iid, card: q.card, flipped: q.flipped, controller: q.controller, index, about: snap.iid });
+            if (t.filter && matches(s, t.filter, snap2, q.controller, snap2.controller, q.iid, snap2)) queue(s).push({ iid: q.iid, card: q.card, flipped: q.flipped, controller: q.controller, index, about: snap2.iid });
       }
-      fire(s, snap, "ltb");
+      fire(s, snap2, "ltb");
       for (const q of s.battlefield) if (q.attachedTo === iid) q.attachedTo = void 0;
     }
     if (obj.token && dest !== "battlefield") {
-      if (snap) log(s, `${cardName(s, obj.card)} token ${to === "graveyard" ? "dies" : "leaves the battlefield"}.`);
+      if (snap2) log(s, `${cardName(s, obj.card)} token ${to === "graveyard" ? "dies" : "leaves the battlefield"}.`);
       return;
     }
     const owner = s.players[obj.owner];
     const plain = { iid: obj.iid, card: obj.card, owner: obj.owner, token: obj.token, commander: obj.commander };
     switch (dest) {
       case "battlefield": {
-        const controller = opts.controller ?? (from === "battlefield" && snap ? snap.controller : obj.owner);
+        const controller = opts.controller ?? (from === "battlefield" && snap2 ? snap2.controller : obj.owner);
         let tapped = !!opts.tapped;
         const r = rulesOf(s, { card: obj.card, flipped: opts.flipped });
         if (r.types.includes("land") && !tapped) tapped = entersTapped(s, obj.card, controller, opts.flipped);
@@ -3298,8 +3331,8 @@
       default:
         owner[dest].push(plain);
     }
-    if (snap && dest !== "battlefield" && !opts.manual) {
-      const verb = to === "graveyard" ? opts.cause === "sacrifice" ? "is sacrificed" : isCreatureSnap(s, snap) ? "dies" : "is put into the graveyard" : to === "exile" ? "is exiled" : to === "hand" ? "returns to its owner's hand" : "leaves the battlefield";
+    if (snap2 && dest !== "battlefield" && !opts.manual) {
+      const verb = to === "graveyard" ? opts.cause === "sacrifice" ? "is sacrificed" : isCreatureSnap(s, snap2) ? "dies" : "is put into the graveyard" : to === "exile" ? "is exiled" : to === "hand" ? "returns to its owner's hand" : "leaves the battlefield";
       log(s, `${cardName(s, obj.card)} ${verb}.`);
     }
   }
@@ -4223,12 +4256,18 @@ ${text}`, options: [{ id: "done", label: "Done", card: it.card, score: 1 }, { id
     }
     if (s.step === "cleanup") {
       s.extraCombats = 0;
+      s.extraCombatsNow = 0;
       s.untapAtExtra = 0;
       s.active = opp(s.active);
       return enterStep(s, "untap");
     }
     if (s.step === "endCombat") {
       s.combat = null;
+      if ((s.extraCombatsNow ?? 0) > 0) {
+        s.extraCombatsNow--;
+        log(s, `${s.players[s.active].name} gets an additional combat phase.`);
+        return enterStep(s, "beginCombat");
+      }
       return enterStep(s, "main2");
     }
     const i = ORDER.indexOf(s.step);
@@ -4315,6 +4354,14 @@ ${text}`, options: [{ id: "done", label: "Done", card: it.card, score: 1 }, { id
       } else nextStep(s);
     } else s.pending = { kind: "priority", player: opp(p) };
   }
+  var collecting = null;
+  var frameBase = 0;
+  function snap(s) {
+    if (!collecting) return;
+    const last = collecting[collecting.length - 1];
+    if (last ? last.log.length === s.log.length && last.stack.length === s.stack.length : s.log.length === frameBase) return;
+    collecting.push(cloneState(s));
+  }
   function settle(s) {
     for (let guard = 0; guard < 2e3; guard++) {
       if (s.pending.kind === "over") return s;
@@ -4336,6 +4383,7 @@ ${text}`, options: [{ id: "done", label: "Done", card: it.card, score: 1 }, { id
       if (s.pending.kind === "priority") {
         const p = s.pending.player;
         if (!wantsStop(s, p)) {
+          snap(s);
           passPriority(s, p);
           continue;
         }
@@ -4345,14 +4393,17 @@ ${text}`, options: [{ id: "done", label: "Done", card: it.card, score: 1 }, { id
     return s;
   }
   function tryApply(s, intent) {
+    const mark = collecting?.length ?? 0;
     try {
       return { state: apply(s, intent) };
     } catch (e) {
+      if (collecting) collecting.length = mark;
       if (e instanceof Illegal) return { error: e.message };
       throw e;
     }
   }
   function apply(s0, intent) {
+    if (collecting && !collecting.length) frameBase = s0.log.length;
     let s = cloneState(s0);
     s.notice = null;
     const p = intent.player;
@@ -4748,15 +4799,28 @@ ${text}`, options: [{ id: "done", label: "Done", card: it.card, score: 1 }, { id
     const pl = s.players[me];
     const lands2 = pl.hand.filter((o) => rulesOf(s, o).types.includes("land"));
     for (const l of lands2) if (!canPlayLand(s, me, l.iid)) out.push({ type: "playLand", player: me, iid: l.iid });
-    const cards = [...pl.command, ...pl.hand].filter((o) => !rulesOf(s, o).types.includes("land"));
+    const playable = pl.exile.filter((o) => pl.playable?.some((q) => q.iid === o.iid && q.until >= s.turn));
+    for (const l of playable) if (rulesOf(s, l).types.includes("land") && !canPlayLand(s, me, l.iid)) out.push({ type: "playLand", player: me, iid: l.iid });
+    const cards = [...pl.command, ...pl.hand, ...playable].filter((o) => !rulesOf(s, o).types.includes("land"));
+    const legends = new Set(s.battlefield.filter((p) => p.controller === me && rulesOf(s, p).supertypes.includes("legendary")).map((p) => p.card));
     const scored = cards.map((o) => {
       const r = rulesOf(s, o);
       const isSpell = r.types.includes("instant") || r.types.includes("sorcery");
+      const spell2 = NAMED[def(s, o.card).name]?.spell ?? r.spell;
       let v = def(s, o.card).cmc + (o.commander ? 1.5 : 0);
-      if (isSpell && !r.spell) v -= 100;
-      if (isSpell && r.spell?.effects.some((e) => e.e === "counter")) v -= 100;
-      if (isSpell && r.spell?.effects.some((e) => e.e === "destroyAll" || e.e === "exileAll")) v += boardWipeValue(s, me);
-      if (isSpell && r.spell?.targets.length && r.spell.effects.some((e) => e.e === "destroy" || e.e === "exile") && !s.battlefield.some((p) => p.controller !== me && isCreature(s, p))) v -= 100;
+      if (pl.exile.includes(o)) v += 2;
+      if (isSpell && !spell2) v -= 100;
+      if (legends.has(o.card)) v -= 100;
+      if (isSpell && /additional combat phase/.test(def(s, o.card).oracle)) {
+        const attacked = s.battlefield.some((p) => p.controller === me && p.attackedTurn === s.turn);
+        const army = s.battlefield.filter((p) => p.controller === me && isCreature(s, p)).length;
+        const untaps = /Untap all creatures that attacked this turn\. After this main phase/.test(def(s, o.card).oracle);
+        if (army < 2 || untaps && !attacked) v -= 100;
+        else v += 3;
+      }
+      if (isSpell && spell2?.effects.some((e) => e.e === "counter")) v -= 100;
+      if (isSpell && spell2?.effects.some((e) => e.e === "destroyAll" || e.e === "exileAll")) v += boardWipeValue(s, me);
+      if (isSpell && spell2?.targets.length && spell2.effects.some((e) => e.e === "destroy" || e.e === "exile") && !s.battlefield.some((p) => p.controller !== me && isCreature(s, p))) v -= 100;
       if (!isSpell && !r.fullyAutomated && !r.types.includes("creature") && !r.types.includes("artifact")) v -= 1;
       return { o, v };
     }).filter((x) => x.v > -50).sort((a, b) => b.v - a.v);
@@ -4806,7 +4870,8 @@ ${text}`, options: [{ id: "done", label: "Done", card: it.card, score: 1 }, { id
         return bp >= at || hasKw(s, b, "deathtouch");
       });
       const evasive = blockers.length === 0;
-      if (evasive || !dies || totalPower >= oppLife + blockers.length * 2) out.push(a.iid);
+      const cmdWin = s.format.commanderDamage && a.commander && evasive && (s.players[opp(me)].commanderDamage[a.card] ?? 0) + ap >= 21;
+      if (evasive || cmdWin || !dies || totalPower >= oppLife + blockers.length * 2) out.push(a.iid);
     }
     for (const a of mine2) if ((rulesOf(s, a).mustAttack || hasKw(s, a, "goaded")) && !out.includes(a.iid)) out.push(a.iid);
     return out;
@@ -4831,7 +4896,8 @@ ${text}`, options: [{ id: "done", label: "Done", card: it.card, score: 1 }, { id
       });
       pick ??= can.find((b) => pt(s, b)[1] > ap && !hasKw(s, a, "deathtouch"));
       pick ??= can.find((b) => (pt(s, b)[0] >= at || hasKw(s, b, "deathtouch")) && def(s, b.card).cmc <= def(s, a.card).cmc);
-      if (!pick && incoming >= life) pick = can.slice().sort((x, y) => def(s, x.card).cmc - def(s, y.card).cmc)[0];
+      const cmdLethal = !!(s.format.commanderDamage && a.commander && (s.players[me].commanderDamage[a.card] ?? 0) + ap >= 21 && !hasKw(s, a, "trample"));
+      if (!pick && (incoming >= life || cmdLethal)) pick = can.slice().sort((x, y) => def(s, x.card).cmc - def(s, y.card).cmc)[0];
       if (pick) {
         blocks.push({ blocker: pick.iid, attacker: a.iid });
         if (!hasKw(s, a, "trample")) incoming -= ap;
@@ -5292,13 +5358,64 @@ Terramorphic Expanse`)
   }
   globalThis.HoloCov = { coverage };
 
+  // src/engine/invariants.ts
+  function invariantErrors(s) {
+    const out = [];
+    const seen = /* @__PURE__ */ new Map();
+    const note = (iid, where) => {
+      const was = seen.get(iid);
+      if (was) out.push(`card ${iid} is in two places: ${was} and ${where}`);
+      else seen.set(iid, where);
+    };
+    s.players.forEach((pl, i) => {
+      for (const z of ["library", "hand", "graveyard", "exile", "command"]) for (const o of pl[z]) {
+        note(o.iid, `${z}#${i}`);
+        if (o.owner !== i) out.push(`${s.cards[o.card]?.name ?? o.card} is in ${pl.name}'s ${z} but belongs to player ${o.owner}`);
+        if (o.token) out.push(`a token (${s.cards[o.card]?.name}) is in a ${z}`);
+      }
+      for (const o of pl.command) if (!o.commander) out.push(`${s.cards[o.card]?.name} is in the command zone but isn't a commander`);
+      for (const c of pl.commanders) {
+        const n = [...pl.library, ...pl.hand, ...pl.graveyard, ...pl.exile, ...pl.command, ...s.battlefield, ...s.stack.map((it) => it.obj).filter((o) => !!o)].filter((o) => o.card === c && o.commander).length;
+        if (n !== 1) out.push(`commander ${s.cards[c]?.name} is in ${n} places`);
+      }
+      if (Object.values(pl.pool).some((v) => v < 0)) out.push(`${pl.name} has negative mana`);
+      if (pl.landsPlayed < 0) out.push("negative lands played");
+    });
+    for (const p of s.battlefield) {
+      note(p.iid, "battlefield");
+      if (p.controller !== 0 && p.controller !== 1) out.push(`bad controller ${p.controller}`);
+      if (p.attachedTo !== void 0 && p.attachedTo === p.iid) out.push("attached to itself");
+      for (const [k, v] of Object.entries(p.counters)) if (v < 0) out.push(`${k} counters below zero on ${s.cards[p.card]?.name}`);
+    }
+    for (const it of s.stack) if (it.obj) note(it.obj.iid, "stack");
+    if (s.pending.kind === "priority" && !s.tasks.length) {
+      for (const p of s.battlefield) {
+        const d = s.cards[p.card];
+        if (!d) {
+          out.push(`unknown card ${p.card}`);
+          continue;
+        }
+        const creature2 = /Creature/.test(d.typeLine) || p.mods.some((m) => m.note === "creature");
+        if (creature2 && !p.faceDown && !/Indestructible/i.test(d.oracle) && !p.mods.some((m) => m.keywords?.includes("indestructible"))) {
+          const [, t] = pt(s, p);
+          if (t <= 0 && !/Spacecraft/.test(d.typeLine)) out.push(`${d.name} has toughness ${t} but is still on the battlefield`);
+        }
+      }
+      s.players.forEach((pl) => {
+        if (pl.life <= 0 && !pl.lost) out.push(`${pl.name} is at ${pl.life} life but hasn't lost`);
+      });
+    }
+    if (s.combat && s.combat.attackers.some((a) => !s.battlefield.some((p) => p.iid === a.iid)) && s.step === "attackers") out.push("an attacker is gone during declare attackers");
+    return out;
+  }
+
   // tools/realsim.ts
   function realSim(cards, n) {
     const out = [];
     for (let g = 0; g < n; g++) {
       const a = DECKS[g % 4].id;
       const b = DECKS[(g + 1 + Math.floor(g / 4)) % 4].id;
-      let s = buildGame(cards, [{ name: "A", deck: a, leader: "commander", bot: true }, { name: "B", deck: b, leader: g % 2 ? "alt" : "commander", bot: true }], "duel", 1e3 + g);
+      let s = buildGame(cards, [{ name: "A", deck: a, leader: "commander", bot: true }, { name: "B", deck: b, leader: g % 2 ? "alt" : "commander", bot: true }], ["duel", "oneVsOne", "classic"][g % 3], 1e3 + g);
       let error;
       try {
         for (let i = 0; i < 6e3 && s.pending.kind !== "over" && s.turn <= 40; i++) {
@@ -5308,6 +5425,11 @@ Terramorphic Expanse`)
             break;
           }
           s = next2;
+          const bad = invariantErrors(s);
+          if (bad.length) {
+            error = `invariant: ${bad.slice(0, 2).join("; ")} :: ${s.log.slice(-4).join(" | ")}`;
+            break;
+          }
         }
       } catch (e) {
         error = `${e.message} @ ${e.stack?.split("\n").slice(0, 3).join(" | ")} :: ${s.log.slice(-4).join(" | ")}`;
