@@ -56,6 +56,8 @@ export type Effect =
 	| { e: 'destroy'; t: number }
 	| { e: 'exile'; t: number }
 	| { e: 'bounce'; t: number }
+	/** Put a permanent into its owner's library: on top, on the bottom, or the owner chooses. */
+	| { e: 'tuck'; t: number; where: 'top' | 'bottom' | 'either' }
 	| { e: 'tap'; t: number; untap?: boolean }
 	| { e: 'destroyAll'; filter: Filter }
 	| { e: 'exileAll'; filter: Filter }
@@ -605,6 +607,18 @@ function compileSentence(s0: string, out: Compiled, defName: string): boolean {
 		out.effects.push({ e: 'bounce', t: addTarget(out, spec) })
 		return true
 	}
+	if ((m = s.match(new RegExp(`^Put (${TGT}) (?:on top|on the bottom|second from the top)? ?(?:of|into) (?:its owner's|their owner's) library(?: (second from the top|third from the top))?$`, 'i'))) || (m = s.match(new RegExp(`^Put (${TGT}) (on top|on the bottom) of (?:its owner's|their owner's) library$`, 'i')))) {
+		const spec = parseTarget(m[1])
+		if (!spec || spec.kind !== 'perm') return false
+		out.effects.push({ e: 'tuck', t: addTarget(out, spec), where: /bottom/i.test(s) ? 'bottom' : 'top' })
+		return true
+	}
+	if ((m = s.match(new RegExp(`^(${TGT})'s owner puts it on (?:the )?top or bottom of their library$`, 'i')))) {
+		const spec = parseTarget(m[1])
+		if (!spec || spec.kind !== 'perm') return false
+		out.effects.push({ e: 'tuck', t: addTarget(out, spec), where: 'either' })
+		return true
+	}
 	if ((m = s.match(new RegExp(`^(Tap|Untap) (${TGT})$`, 'i')))) {
 		const spec = parseTarget(m[2])
 		if (!spec || spec.kind !== 'perm') return false
@@ -1039,12 +1053,23 @@ export function rulesFor(def: CardDef, flipped = false): Rules {
 	if (hit) return hit
 	const face = flipped && def.back ? def.back : def
 	const r = parse({ name: face.name, oracle: face.oracle, typeLine: face.typeLine })
-	for (const o of overrides.get(face.name) ?? [])
+	for (const o of overrides.get(face.name) ?? []) {
+		let hit = false
 		for (const t of r.triggers)
 			if (o.events.includes(t.event)) {
 				t.compiled = o.compiled
 				t.conditional = false
+				hit = true
 			}
+		// the script stands for an ability the parser didn't recognise at all: add it
+		if (!hit) {
+			const word: Partial<Record<TriggerEvent, RegExp>> = { attacks: /attack/i, etb: /enter/i, dies: /dies/i, landfall: /land/i, upkeep: /upkeep/i, endStep: /end step/i }
+			for (const event of o.events) {
+				const line = face.oracle.split('\n').find((l) => word[event]?.test(l)) ?? face.name
+				r.triggers.push({ index: r.triggers.length, event, text: line, effectText: '', compiled: o.compiled })
+			}
+		}
+	}
 	if (overrides.has(face.name)) r.fullyAutomated = r.triggers.every((t) => t.compiled) && (r.fullyAutomated || r.triggers.length > 0)
 	for (const f of patches.get(face.name) ?? []) f(r)
 	cache.set(key, r)

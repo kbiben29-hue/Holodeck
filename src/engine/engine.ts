@@ -324,7 +324,9 @@ export function moveCard(s: GameState, iid: number, to: MoveTo, opts: { controll
 	if (!d) return
 	const { obj, from } = d
 	let dest: MoveTo = to
-	if (obj.commander && !opts.manual && from !== 'command' && ['graveyard', 'exile', 'hand', 'library', 'libraryBottom'].includes(to)) dest = 'command'
+	// rule 903.9: a commander going to the graveyard, exile or a library goes to the command zone instead (we always
+	// choose to); one returned to its owner's hand stays there, where it can be cast again without tax
+	if (obj.commander && !opts.manual && from !== 'command' && ['graveyard', 'exile', 'library', 'libraryBottom'].includes(to)) dest = 'command'
 	if (snap) {
 		// "for as long as you control ~"
 		for (const q of s.battlefield) if (q.mods.some((m) => m.note === `while:${snap.iid}`)) q.mods = q.mods.filter((m) => m.note !== `while:${snap.iid}`)
@@ -1380,12 +1382,19 @@ function nextStep(s: GameState) {
 	}
 	if (s.step === 'cleanup') {
 		s.extraCombats = 0
+		s.extraCombatsNow = 0
 		s.untapAtExtra = 0
 		s.active = opp(s.active)
 		return enterStep(s, 'untap')
 	}
 	if (s.step === 'endCombat') {
 		s.combat = null
+		// "after this phase, there is an additional combat phase" (Combat Celebrant)
+		if ((s.extraCombatsNow ?? 0) > 0) {
+			s.extraCombatsNow!--
+			log(s, `${s.players[s.active].name} gets an additional combat phase.`)
+			return enterStep(s, 'beginCombat')
+		}
 		return enterStep(s, 'main2')
 	}
 	const i = ORDER.indexOf(s.step)

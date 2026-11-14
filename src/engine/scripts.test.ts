@@ -17,7 +17,8 @@ const tube = mk('Jefferies Tube', '{1}', 'Artifact', '{4}, {T}: Draw a card. You
 const sword = mk('The Sword of Kahless', '{4}', 'Legendary Artifact — Equipment', 'Equipped creature gets +2/+2 and has "Whenever this creature attacks, look at the top five cards of your library. You may put a Klingon or Warrior creature card from among them onto the battlefield. Put the rest on the bottom of your library in a random order."\nEquip {2}')
 const warrior = mk('Klingon Recruit', '{1}{R}', 'Creature — Klingon Warrior', '', '2/2')
 const guardian = mk('The Guardian of Forever', '{3}', 'Legendary Artifact Creature — Construct', "Defender\n{4}, Sacrifice another nontoken creature: Return that card to the battlefield under its owner's control at the beginning of the next end step.", '0/6')
-const ALL = [stargazer, ownTheDay, passage, arex, archive, vengeance, tube, sword, warrior, guardian]
+const celebrant = mk('Combat Celebrant', '{2}{R}', 'Creature — Human Warrior', "If this creature hasn't been exerted this turn, you may exert it as it attacks. When you do, untap all other creatures you control and after this phase, there is an additional combat phase.", '4/1')
+const ALL = [celebrant, stargazer, ownTheDay, passage, arex, archive, vengeance, tube, sword, warrior, guardian]
 
 function start(): GameState {
 	let s = newGame({ players: [{ name: 'A', ...FIX_DECKS.uw }, { name: 'B', ...FIX_DECKS.rg }], cards: { ...FIX, ...Object.fromEntries(ALL.map((c) => [c.id, c])) }, seed: 7, format: 'duel', first: 0 })
@@ -160,4 +161,17 @@ test('withFrames returns the in-between moments of a move (attack declared befor
 	assert.equal(result.state!.players[1].life, 18)
 	// failed moves add nothing
 	assert.equal(withFrames(() => tryApply(s, { type: 'attack', player: 1, attackers: [] })).frames.length, 0)
+})
+
+test('Combat Celebrant: exert for a second combat right away; it stays tapped next turn', () => {
+	let s = start()
+	const cc = give(s, 0, celebrant.id, 'battlefield')
+	const bears = give(s, 0, 'grizzly-bears', 'battlefield')
+	s = ok(s, { type: 'pass', player: 0 })
+	let fights = 0
+	s = until(s, (x) => x.step === 'main2', (x) => (fights++ === 0 ? [cc, bears] : [bears].filter((i) => !findPerm(x, i)?.tapped)))
+	assert.equal(s.players[1].life, 20 - 6 - 2, 'both attack, then the untapped bears attack again')
+	assert.equal(s.log.filter((l) => /additional combat phase/.test(l)).length, 2)
+	s = until(s, (x) => x.active === 0 && x.step === 'main1' && x.turn > 2)
+	assert.equal(findPerm(s, cc)?.tapped, true, 'exerted: skipped the untap step')
 })

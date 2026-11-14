@@ -3,6 +3,7 @@
 // questions by the option scores. Cards it can't play automatically it mostly leaves alone.
 
 import { abilityProblem, canAttack, canBlock, canCast, canPlayLand, tryApply } from '../engine/engine'
+import { NAMED } from '../engine/named'
 import { def, findPerm, hasKw, isCreature, keywords, opp, pt, rulesOf } from '../engine/state'
 import type { GameState, Intent, Perm } from '../engine/types'
 
@@ -42,17 +43,34 @@ export function botIntents(s: GameState, me: number): Intent[] {
 	// land
 	const lands = pl.hand.filter((o) => rulesOf(s, o).types.includes('land'))
 	for (const l of lands) if (!canPlayLand(s, me, l.iid)) out.push({ type: 'playLand', player: me, iid: l.iid })
-	// spells, biggest first; commanders count as cards in hand
-	const cards = [...pl.command, ...pl.hand].filter((o) => !rulesOf(s, o).types.includes('land'))
+	// lands exiled with "you may play it" (Worf's Battlefront)
+	const playable = pl.exile.filter((o) => pl.playable?.some((q) => q.iid === o.iid && q.until >= s.turn))
+	for (const l of playable) if (rulesOf(s, l).types.includes('land') && !canPlayLand(s, me, l.iid)) out.push({ type: 'playLand', player: me, iid: l.iid })
+	// spells, biggest first; commanders and playable exiled cards count as cards in hand
+	const cards = [...pl.command, ...pl.hand, ...playable].filter((o) => !rulesOf(s, o).types.includes('land'))
+	const legends = new Set(s.battlefield.filter((p) => p.controller === me && rulesOf(s, p).supertypes.includes('legendary')).map((p) => p.card))
 	const scored = cards
 		.map((o) => {
 			const r = rulesOf(s, o)
 			const isSpell = r.types.includes('instant') || r.types.includes('sorcery')
+			const spell = NAMED[def(s, o.card).name]?.spell ?? r.spell
 			let v = def(s, o.card).cmc + (o.commander ? 1.5 : 0)
-			if (isSpell && !r.spell) v -= 100 // can't do it automatically
-			if (isSpell && r.spell?.effects.some((e) => e.e === 'counter')) v -= 100
-			if (isSpell && r.spell?.effects.some((e) => e.e === 'destroyAll' || e.e === 'exileAll')) v += boardWipeValue(s, me)
-			if (isSpell && r.spell?.targets.length && r.spell.effects.some((e) => e.e === 'destroy' || e.e === 'exile') && !s.battlefield.some((p) => p.controller !== me && isCreature(s, p))) v -= 100
+			// exiled cards are only playable for a while: use them first
+			if (pl.exile.includes(o)) v += 2
+			if (isSpell && !spell) v -= 100 // can't do it automatically
+			// a second copy of a legend would just be put into the graveyard
+			if (legends.has(o.card)) v -= 100
+			// extra combat spells: after attacking (Own the Day untaps the attackers) or before the second main phase ends
+			if (isSpell && /additional combat phase/.test(def(s, o.card).oracle)) {
+				const attacked = s.battlefield.some((p) => p.controller === me && p.attackedTurn === s.turn)
+				const army = s.battlefield.filter((p) => p.controller === me && isCreature(s, p)).length
+				const untaps = /Untap all creatures that attacked this turn\. After this main phase/.test(def(s, o.card).oracle)
+				if (army < 2 || (untaps && !attacked)) v -= 100
+				else v += 3
+			}
+			if (isSpell && spell?.effects.some((e) => e.e === 'counter')) v -= 100
+			if (isSpell && spell?.effects.some((e) => e.e === 'destroyAll' || e.e === 'exileAll')) v += boardWipeValue(s, me)
+			if (isSpell && spell?.targets.length && spell.effects.some((e) => e.e === 'destroy' || e.e === 'exile') && !s.battlefield.some((p) => p.controller !== me && isCreature(s, p))) v -= 100
 			if (!isSpell && !r.fullyAutomated && !r.types.includes('creature') && !r.types.includes('artifact')) v -= 1
 			return { o, v }
 		})
@@ -109,7 +127,9 @@ function chooseAttackers(s: GameState, me: number): number[] {
 			return bp >= at || hasKw(s, b, 'deathtouch')
 		})
 		const evasive = blockers.length === 0
-		if (evasive || !dies || totalPower >= oppLife + blockers.length * 2) out.push(a.iid)
+		// commander damage: an unblockable swing that reaches 21 wins
+		const cmdWin = s.format.commanderDamage && a.commander && evasive && (s.players[opp(me)].commanderDamage[a.card] ?? 0) + ap >= 21
+		if (evasive || cmdWin || !dies || totalPower >= oppLife + blockers.length * 2) out.push(a.iid)
 	}
 	for (const a of mine) if ((rulesOf(s, a).mustAttack || hasKw(s, a, 'goaded')) && !out.includes(a.iid)) out.push(a.iid)
 	return out
@@ -138,8 +158,9 @@ function chooseBlocks(s: GameState, me: number): { blocker: number; attacker: nu
 		pick ??= can.find((b) => pt(s, b)[1] > ap && !hasKw(s, a, 'deathtouch'))
 		// a good trade
 		pick ??= can.find((b) => (pt(s, b)[0] >= at || hasKw(s, b, 'deathtouch')) && def(s, b.card).cmc <= def(s, a.card).cmc)
-		// chump when the damage would kill us
-		if (!pick && incoming >= life) pick = can.slice().sort((x, y) => def(s, x.card).cmc - def(s, y.card).cmc)[0]
+		// chump when the damage would kill us — or a commander would reach 21 commander damage
+		const cmdLethal = !!(s.format.commanderDamage && a.commander && (s.players[me].commanderDamage[a.card] ?? 0) + ap >= 21 && !hasKw(s, a, 'trample'))
+		if (!pick && (incoming >= life || cmdLethal)) pick = can.slice().sort((x, y) => def(s, x.card).cmc - def(s, y.card).cmc)[0]
 		if (pick) {
 			blocks.push({ blocker: pick.iid, attacker: a.iid })
 			if (!hasKw(s, a, 'trample')) incoming -= ap

@@ -280,6 +280,8 @@ export interface GameState {
 	delayed?: { at: 'end' | 'cleanup' | 'endCombat' | 'upkeep'; kind: 'return' | 'exile' | 'control' | 'bottom' | 'rebound'; iid: number; owner?: number; draw?: boolean }[]
 	/** Additional combat phases still to come this turn (each followed by a main phase). */
 	extraCombats?: number
+	/** Additional combat phases right after this one (no main phase in between). */
+	extraCombatsNow?: number
 	/** World at War: untap the creatures that attacked when that many of the extra combats begin. */
 	untapAtExtra?: number
 }

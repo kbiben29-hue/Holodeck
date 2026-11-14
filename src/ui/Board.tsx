@@ -498,7 +498,9 @@ export function Board(props: BoardProps) {
 						style={layout === 'console' ? { zIndex: i } : undefined}
 						onClick={() => clickCard(o)}
 						onMouseEnter={(e) => peek(o.iid, e)} onMouseLeave={unpeek}
-					/>
+					>
+						{o.commander && <span className="badge cmd" title="Your commander — cast it from your hand without commander tax">★</span>}
+					</CardFaceView>
 				),
 			)}
 			{hand.length === 0 && <span className="empty">empty hand</span>}
@@ -985,6 +987,7 @@ function ActionPanel({ s, me, loc, act, tool, setAttachFrom, close, hb }: { s: G
 		move('exile', 'Exile')
 		move('library', 'Library top')
 		move('libraryBottom', 'Library bottom')
+		if (o.commander) move('command', 'Command zone')
 	} else if (loc.zone === 'command') {
 		if (loc.owner === me) {
 			const cost = spellCost(s, me, o.card, true)

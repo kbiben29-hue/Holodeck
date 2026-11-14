@@ -32,6 +32,8 @@ npm run build
 - `sixtyCards` in `src/data/decks.ts` — the Classic 60-card cut (format `sixty`, `noCommander`: no command zone).
 - `src/data/scryfall.ts` — loads cards + tokens from Scryfall on the device (prefers Star Trek sets), caches
   in localStorage. Card data is never committed or bundled.
+- `src/engine/invariants.ts` — what every state must satisfy (one place per card, commanders, SBAs done);
+  `fuzz.test.ts` plays bot games with the stand-ins and checks it after every move (`FUZZ=200 npm test` for more).
 - `src/engine/scenario.ts` — build a position directly (drills, tests). `startrek.fixture.ts` — test stand-ins.
 - `src/ui/coach.ts` — tutorial coach (`INTRO` pages, `coachFor` explains the step and turns the bot's
   suggested move into a `Hint`). `src/ui/lessons.ts` — per-deck `PLANS`, `COMBOS` (alerts in coached games),

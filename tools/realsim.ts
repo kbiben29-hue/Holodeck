@@ -3,6 +3,7 @@ import { botStep } from '../src/bot/bot'
 import { buildGame } from '../src/data/build'
 import { DECKS } from '../src/data/decks'
 import { coverage } from './coverage'
+import { invariantErrors } from '../src/engine/invariants'
 import type { CardDef } from '../src/engine/types'
 
 export function realSim(cards: Record<string, CardDef>, n: number) {
@@ -10,7 +11,7 @@ export function realSim(cards: Record<string, CardDef>, n: number) {
 	for (let g = 0; g < n; g++) {
 		const a = DECKS[g % 4].id
 		const b = DECKS[(g + 1 + Math.floor(g / 4)) % 4].id
-		let s = buildGame(cards, [{ name: 'A', deck: a, leader: 'commander', bot: true }, { name: 'B', deck: b, leader: g % 2 ? 'alt' : 'commander', bot: true }], 'duel', 1000 + g)
+		let s = buildGame(cards, [{ name: 'A', deck: a, leader: 'commander', bot: true }, { name: 'B', deck: b, leader: g % 2 ? 'alt' : 'commander', bot: true }], (['duel', 'oneVsOne', 'classic'] as const)[g % 3], 1000 + g)
 		let error: string | undefined
 		try {
 			for (let i = 0; i < 6000 && s.pending.kind !== 'over' && s.turn <= 40; i++) {
@@ -20,6 +21,11 @@ export function realSim(cards: Record<string, CardDef>, n: number) {
 					break
 				}
 				s = next
+				const bad = invariantErrors(s)
+				if (bad.length) {
+					error = `invariant: ${bad.slice(0, 2).join('; ')} :: ${s.log.slice(-4).join(' | ')}`
+					break
+				}
 			}
 		} catch (e) {
 			error = `${(e as Error).message} @ ${(e as Error).stack?.split('\n').slice(0, 3).join(' | ')} :: ${s.log.slice(-4).join(' | ')}`

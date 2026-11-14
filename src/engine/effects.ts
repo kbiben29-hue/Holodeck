@@ -221,6 +221,16 @@ export function runCompiled(ctx: Ctx, item: StackItem, compiled: Compiled, keyPr
 			case 'bounce':
 				for (const p of tperms(e.t)) H().move(s, p.iid, 'hand')
 				break
+			case 'tuck':
+				for (const p of tperms(e.t)) {
+					let where = e.where
+					if (where === 'either') {
+						const mine = p.owner === me
+						where = ctx.ask(p.owner, { key: k + 'tk' + p.iid, prompt: `Put ${permName(s, p)} on the top or the bottom of your library?`, options: [{ id: 'top', label: 'Top', score: mine ? 1 : 0 }, { id: 'bottom', label: 'Bottom', score: mine ? 0 : 1 }], min: 1, max: 1 })[0] as 'top' | 'bottom'
+					}
+					H().move(s, p.iid, where === 'top' ? 'library' : 'libraryBottom')
+				}
+				break
 			case 'tap':
 				for (const p of tperms(e.t)) H().setTapped(s, p, !e.untap)
 				break

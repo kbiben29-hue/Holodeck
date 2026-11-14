@@ -353,7 +353,8 @@ T('Combat Celebrant', ['attacks'], 'Combat Celebrant#t', (ctx, item) => {
 	c.used = { ...c.used, exert: s.turn }
 	c.skipUntap = true
 	for (const p of mine(s, me)) if (p.iid !== c.iid && isCreature(s, p)) p.tapped = false
-	s.extraCombats = (s.extraCombats ?? 0) + 1
+	s.extraCombatsNow = (s.extraCombatsNow ?? 0) + 1
+	log(s, 'Combat Celebrant is exerted: the other creatures untap and there will be an additional combat phase.')
 })
 done('Combat Celebrant')
 
