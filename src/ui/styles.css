@@ -2398,3 +2398,325 @@ body {
 .pocket.tablet .fx-num {
 	font-size: 30px;
 }
+
+/* ───────── drag to play ───────── */
+.hand .cardface,
+.cmdpile .cardface,
+.pocket .command .cardface {
+	touch-action: none;
+}
+.pocket .hand .cardface {
+	touch-action: pan-x;
+}
+.drag-ghost {
+	position: absolute !important;
+	margin: 0 !important;
+	pointer-events: none;
+	transform: none !important;
+	rotate: -4deg;
+	scale: 1.12;
+	filter: drop-shadow(0 18px 30px rgba(0, 0, 0, 0.7)) drop-shadow(0 0 14px rgba(127, 184, 255, 0.55));
+	transition: rotate 0.15s;
+	animation: none !important;
+}
+.drag-source {
+	opacity: 0.3;
+}
+.dragging [data-drop] {
+	outline: 2px dashed rgba(243, 210, 122, 0.35);
+	outline-offset: -4px;
+	transition: outline-color 0.15s, background-color 0.15s, box-shadow 0.15s;
+}
+.dragging [data-drop].drop-hot {
+	outline: 3px solid var(--gold, #f3d27a);
+	background-color: rgba(243, 210, 122, 0.08);
+	box-shadow: inset 0 0 40px rgba(243, 210, 122, 0.25);
+}
+.dragging .pile-card[data-drop].drop-hot,
+.dragging .zone[data-drop].drop-hot {
+	box-shadow: 0 0 0 3px var(--gold, #f3d27a), 0 0 20px var(--gold, #f3d27a);
+}
+
+/* ───────── the end of the game (src/ui/Finale.tsx) ───────── */
+.finale {
+	position: fixed;
+	inset: 0;
+	z-index: 800;
+	display: flex;
+	align-items: center;
+	justify-content: center;
+	background: rgba(2, 4, 14, 0.55);
+}
+.finale.animated.warp {
+	background: #02040e;
+	animation: finale-fade 0.5s ease-out;
+}
+.finale.animated.breach {
+	background: transparent;
+	animation: red-pulse 0.62s ease-in-out 3;
+}
+.finale.animated.borg {
+	background: transparent;
+}
+.finale-canvas {
+	position: absolute;
+	inset: 0;
+	width: 100%;
+	height: 100%;
+}
+@keyframes finale-fade {
+	from {
+		opacity: 0;
+	}
+}
+@keyframes red-pulse {
+	0%,
+	100% {
+		box-shadow: inset 0 0 0 0 rgba(255, 30, 30, 0);
+		background: rgba(60, 0, 0, 0.1);
+	}
+	50% {
+		box-shadow: inset 0 0 160px 40px rgba(255, 30, 30, 0.75);
+		background: rgba(90, 0, 0, 0.35);
+	}
+}
+@keyframes shake {
+	0%,
+	100% {
+		translate: 0 0;
+	}
+	15% {
+		translate: -14px 8px;
+	}
+	30% {
+		translate: 12px -10px;
+	}
+	45% {
+		translate: -9px 6px;
+	}
+	60% {
+		translate: 6px -4px;
+	}
+	80% {
+		translate: -3px 2px;
+	}
+}
+.red-alert,
+.borg-text {
+	position: relative;
+	font-family: 'Antonio', sans-serif;
+	font-weight: 700;
+	text-transform: uppercase;
+	letter-spacing: 0.35em;
+	font-size: 64px;
+	padding: 10px 40px;
+	border-radius: 999px;
+}
+.red-alert {
+	color: #fff;
+	background: #c3121b;
+	box-shadow: 0 0 40px #ff2a2a;
+}
+.board.quake,
+.pocket.quake {
+	animation: shake 0.6s ease-out;
+}
+@keyframes blink {
+	50% {
+		opacity: 0.15;
+	}
+}
+.red-alert {
+	animation: blink 0.31s steps(1) 6, hide 0.1s 1.85s forwards;
+}
+@keyframes hide {
+	to {
+		opacity: 0;
+		visibility: hidden;
+	}
+}
+.borg-text {
+	color: #8dff9e;
+	text-shadow: 0 0 18px #2bff6a;
+	font-family: 'Courier New', monospace;
+	letter-spacing: 0.25em;
+	animation: blink 0.4s steps(1) infinite;
+}
+.pocket .red-alert,
+.pocket .borg-text {
+	font-size: 32px;
+	padding: 6px 20px;
+}
+
+/* the console report: an LCARS-style frame */
+.finale-panel {
+	position: relative;
+	display: flex;
+	min-width: min(760px, 94vw);
+	max-width: 94vw;
+	animation: panel-in 0.55s cubic-bezier(0.2, 0.9, 0.2, 1.1);
+	--fp: var(--orange);
+}
+.finale-panel.lose {
+	--fp: #e2373f;
+}
+.finale-panel.borg {
+	--fp: #3fd86b;
+}
+.finale-panel.draw {
+	--fp: var(--lilac);
+}
+@keyframes panel-in {
+	from {
+		opacity: 0;
+		transform: translateY(40px) scale(0.92);
+	}
+}
+.fp-elbow {
+	flex: none;
+	width: 46px;
+	border-radius: 40px 0 0 40px;
+	background: linear-gradient(var(--fp) 0 62%, transparent 62% 64%, var(--lilac) 64% 82%, transparent 82% 84%, var(--peach) 84%);
+}
+.fp-body {
+	flex: 1;
+	display: flex;
+	flex-direction: column;
+	gap: 10px;
+	padding: 0 26px 22px 18px;
+	background: rgba(8, 8, 20, 0.92);
+	border-top: 14px solid var(--fp);
+	border-bottom: 6px solid var(--fp);
+	border-radius: 0 26px 26px 0;
+	box-shadow: 0 30px 80px rgba(0, 0, 0, 0.7);
+}
+.fp-top {
+	align-self: flex-end;
+	margin-top: -14px;
+	padding: 0 12px;
+	background: #000;
+	color: var(--fp);
+	text-transform: uppercase;
+	letter-spacing: 0.15em;
+	font-size: 14px;
+	line-height: 14px;
+}
+.finale-panel h1 {
+	margin: 4px 0 0;
+	font-family: 'Cinzel', Georgia, serif;
+	font-size: 72px;
+	line-height: 1;
+	letter-spacing: 0.06em;
+	text-transform: uppercase;
+	color: var(--fp);
+	text-shadow: 0 0 30px color-mix(in srgb, var(--fp) 60%, transparent);
+}
+.fp-line {
+	margin: 0;
+	font-size: 22px;
+	color: var(--text);
+}
+.fp-stats {
+	display: grid;
+	grid-template-columns: repeat(5, 1fr);
+	gap: 8px;
+	margin: 6px 0;
+}
+.fp-stats div {
+	display: flex;
+	flex-direction: column;
+	align-items: center;
+	padding: 8px 4px;
+	border-radius: 12px;
+	background: #151528;
+	border-left: 6px solid var(--fp);
+}
+.fp-stats b {
+	font-size: 34px;
+	color: var(--gold);
+}
+.fp-stats span {
+	font-size: 13px;
+	text-transform: uppercase;
+	letter-spacing: 0.06em;
+	color: var(--dim);
+	text-align: center;
+}
+.fp-why {
+	margin: 0;
+	color: var(--dim);
+	font-size: 15px;
+}
+.fp-btns {
+	display: flex;
+	gap: 10px;
+	flex-wrap: wrap;
+}
+.fp-btns button {
+	font-size: 20px;
+	padding: 10px 26px;
+}
+.finale-pill {
+	position: fixed;
+	bottom: 18px;
+	left: 50%;
+	translate: -50% 0;
+	z-index: 800;
+	font-size: 18px;
+	padding: 10px 22px;
+	background: var(--orange);
+	box-shadow: 0 6px 24px rgba(0, 0, 0, 0.6);
+}
+.pocket .finale-panel h1 {
+	font-size: 44px;
+}
+.pocket .fp-line {
+	font-size: 16px;
+}
+.pocket .fp-stats {
+	grid-template-columns: repeat(3, 1fr);
+}
+.pocket .fp-stats b {
+	font-size: 24px;
+}
+.pocket .fp-elbow {
+	width: 22px;
+}
+@media (prefers-reduced-motion: reduce) {
+	.finale,
+	.finale-panel,
+	.red-alert,
+	.borg-text {
+		animation: none !important;
+	}
+}
+.warp-readout {
+	position: absolute;
+	left: 40px;
+	bottom: 40px;
+	display: flex;
+	align-items: stretch;
+	gap: 0;
+	font-family: 'Antonio', sans-serif;
+	text-transform: uppercase;
+	letter-spacing: 0.12em;
+	border-radius: 999px;
+	overflow: hidden;
+	animation: finale-fade 0.4s ease-out;
+}
+.warp-readout span {
+	background: var(--lilac);
+	color: #000;
+	padding: 8px 18px;
+	font-size: 20px;
+}
+.warp-readout b {
+	background: #000;
+	color: var(--orange);
+	padding: 4px 22px;
+	font-size: 36px;
+	min-width: 220px;
+	border: 3px solid var(--orange);
+	border-left: 0;
+	border-radius: 0 999px 999px 0;
+}

@@ -17,6 +17,11 @@ interface Seen {
 
 const reduced = () => typeof matchMedia === 'function' && matchMedia('(prefers-reduced-motion: reduce)').matches
 let enabled = true
+/** A card dropped by hand: its next move starts from where it was let go (not where it sat before). */
+const origins = new Map<number, DOMRect>()
+export function flyFrom(iid: number, rect: DOMRect) {
+	origins.set(iid, rect)
+}
 export function setMotion(on: boolean) {
 	enabled = on
 }
@@ -49,7 +54,10 @@ export function useMotion(root: RefObject<HTMLElement | null>, s: GameState) {
 		const plus = new Map(s.battlefield.map((p) => [p.iid, p.counters['+1/+1'] ?? 0]))
 		const before = prev.current
 		prev.current = { s, seen, life, dmg, plus }
-		if (!before || before.s === s || !enabled || reduced()) return
+		if (!before || before.s === s || !enabled || reduced()) {
+			origins.clear()
+			return
+		}
 		// a new game or a big jump (undo, load): don't animate
 		if (Math.abs(before.s.log.length - s.log.length) > 60 || s.log.length < before.s.log.length) return
 
@@ -85,8 +93,11 @@ export function useMotion(root: RefObject<HTMLElement | null>, s: GameState) {
 		}
 
 		// cards that moved (same element kind, new place) or appeared
+		const dropped = new Map(origins)
+		origins.clear()
 		for (const [iid, now] of seen) {
-			const was = before.seen.get(iid)
+			const from = dropped.get(iid)
+			const was = from ? { rect: from, el: now.el } : before.seen.get(iid)
 			const z0 = zoneOf(before.s, iid)
 			const z1 = zoneOf(s, iid)
 			if (was) {
@@ -100,11 +111,11 @@ export function useMotion(root: RefObject<HTMLElement | null>, s: GameState) {
 				continue
 			}
 			if (z0.zone === z1.zone && z0.zone !== 'gone') continue // e.g. a land group showing a different land
-			const from = anchorFor(z0)
-			if (from) {
-				const a = center(from)
+			const pile = anchorFor(z0)
+			if (pile) {
+				const a = center(pile)
 				const b = center(now.rect)
-				const sc = from.width && now.rect.width ? Math.min(1.4, from.width / now.rect.width) : 0.6
+				const sc = pile.width && now.rect.width ? Math.min(1.4, pile.width / now.rect.width) : 0.6
 				now.el.animate([{ translate: `${(a.x - b.x) / k}px ${(a.y - b.y) / k}px`, scale: String(sc), opacity: 0.4 }, { translate: '0 0', scale: '1', opacity: 1 }], { duration: 460, easing: 'cubic-bezier(.2,.8,.2,1)', delay: z1.zone === 'battlefield' ? lungeDelay : 0, fill: 'backwards' })
 			} else if (z1.zone === 'battlefield') {
 				// a token (or something with no visible origin) materialises

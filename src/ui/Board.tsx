@@ -1,9 +1,10 @@
 import { useEffect, useMemo, useRef, useState, type MouseEvent, type PointerEvent, type ReactNode } from 'react'
 import { abilityProblem, canAttack, canBlock, canCast, canPlayLand, commanderTax, manaAbilitiesOf, spellCost, STEP_NAMES, tryApply } from '../engine/engine'
 import { costText } from '../engine/mana'
-import { useMotion } from './motion'
+import { flyFrom, useMotion } from './motion'
 import type { Pace } from './prefs'
 import { Arrows } from './Arrows'
+import { Finale } from './Finale'
 import { cardName, def, findPerm, isCreature, keywords, opp, permName, pt, rulesOf } from '../engine/state'
 import type { CardDef, GameState, Intent, Mana, ManualOp, Obj, Perm, Step } from '../engine/types'
 import { CardBack, CardFaceView, Cost, Pip } from './Card'
@@ -184,6 +185,105 @@ export function Board(props: BoardProps) {
 		},
 	}
 	const lastTap = useRef<{ iid: number; at: number } | null>(null)
+
+	// ── drag a card from your hand (or the command zone) onto the table to play it, or onto a pile ──
+	const dragging = useRef(false)
+	const beginDrag = (e: PointerEvent<HTMLDivElement>, o: Obj, from: 'hand' | 'command') => {
+		if ((e.pointerType === 'mouse' && e.button !== 0) || props.busy || props.hideHand) return
+		const root = boardRef.current
+		const src = e.currentTarget as HTMLElement
+		if (!root) return
+		const x0 = e.clientX
+		const y0 = e.clientY
+		const touch = e.pointerType !== 'mouse'
+		let ghost: HTMLElement | null = null
+		let hot: HTMLElement | null = null
+		let start: DOMRect | null = null
+		const k = () => {
+			const br = root.getBoundingClientRect()
+			return { br, k: root.offsetWidth ? br.width / root.offsetWidth : 1 }
+		}
+		const place = (cx: number, cy: number) => {
+			if (!ghost || !start) return
+			const { br, k: kk } = k()
+			ghost.style.left = `${(cx - br.left) / kk - start.width / kk / 2}px`
+			ghost.style.top = `${(cy - br.top) / kk - start.height / kk / 2}px`
+		}
+		const targetAt = (cx: number, cy: number) => {
+			const el = document.elementFromPoint(cx, cy)?.closest<HTMLElement>('[data-drop]') ?? null
+			return el && root.contains(el) ? el : null
+		}
+		const move = (ev: globalThis.PointerEvent) => {
+			const dx = ev.clientX - x0
+			const dy = ev.clientY - y0
+			if (!ghost) {
+				if (Math.hypot(dx, dy) < 10) return
+				// in the phone/tablet layout a sideways swipe scrolls the hand instead
+				if (touch && layout === 'pocket' && Math.abs(dx) > Math.abs(dy) * 1.2) return cleanup()
+				if (press.current) window.clearTimeout(press.current.timer)
+				press.current = null
+				setZoom(null)
+				start = src.getBoundingClientRect()
+				const { k: kk } = k()
+				ghost = src.cloneNode(true) as HTMLElement
+				ghost.classList.add('drag-ghost')
+				Object.assign(ghost.style, { width: `${start.width / kk}px`, height: `${start.height / kk}px`, zIndex: '700' })
+				root.appendChild(ghost)
+				src.classList.add('drag-source')
+				root.classList.add('dragging')
+				dragging.current = true
+			}
+			ev.preventDefault()
+			place(ev.clientX, ev.clientY)
+			const t = targetAt(ev.clientX, ev.clientY)
+			if (t !== hot) {
+				hot?.classList.remove('drop-hot')
+				t?.classList.add('drop-hot')
+				hot = t
+			}
+		}
+		const finish = (ev: globalThis.PointerEvent) => {
+			const g = ghost
+			cleanup()
+			if (!g || !start) return
+			swallowClick.current = true
+			window.setTimeout(() => (swallowClick.current = false), 400)
+			const where = targetAt(ev.clientX, ev.clientY)?.dataset.drop
+			const isLand = rulesOf(s, o).types.includes('land')
+			let done = false
+			if (where === 'play') {
+				flyFrom(o.iid, g.getBoundingClientRect())
+				done = isLand ? act({ type: 'playLand', player: me, iid: o.iid }) : act({ type: 'cast', player: me, iid: o.iid })
+			} else if ((where === 'graveyard' || where === 'exile') && from === 'hand') {
+				flyFrom(o.iid, g.getBoundingClientRect())
+				done = tool({ op: 'move', iid: o.iid, to: where, player: me })
+			}
+			if (done) return g.remove()
+			// back where it came from
+			const r = g.getBoundingClientRect()
+			const back = src.getBoundingClientRect()
+			const { k: kk } = k()
+			const anim = g.animate([{ translate: '0 0' }, { translate: `${(back.left - r.left) / kk}px ${(back.top - r.top) / kk}px` }], { duration: 220, easing: 'ease-in', fill: 'forwards' })
+			anim.onfinish = () => g.remove()
+			window.setTimeout(() => g.remove(), 600)
+		}
+		const cancel = () => {
+			ghost?.remove()
+			cleanup()
+		}
+		const cleanup = () => {
+			window.removeEventListener('pointermove', move)
+			window.removeEventListener('pointerup', finish)
+			window.removeEventListener('pointercancel', cancel)
+			hot?.classList.remove('drop-hot')
+			src.classList.remove('drag-source')
+			root.classList.remove('dragging')
+			dragging.current = false
+		}
+		window.addEventListener('pointermove', move, { passive: false })
+		window.addEventListener('pointerup', finish)
+		window.addEventListener('pointercancel', cancel)
+	}
 	useEffect(() => {
 		if (pinned === null) return
 		const key = (e: KeyboardEvent) => e.key === 'Escape' && setPinned(null)
@@ -457,14 +557,14 @@ export function Board(props: BoardProps) {
 				</div>
 				<div className="pile" title="Graveyard — click to see it" onClick={() => setZone({ player: p, zone: 'graveyard' })} onMouseEnter={(e) => topGy && peek(topGy.iid, e)} onMouseLeave={unpeek}>
 					<span className="pile-label">Graveyard</span>
-					<div className="pile-card" data-anchor={`graveyard-${p}`}>
+					<div className="pile-card" data-anchor={`graveyard-${p}`} data-drop={isMe ? 'graveyard' : undefined}>
 						{topGy ? <CardFaceView def={def(s, topGy.card)} /> : <div className="pile-empty" />}
 						<span className="pile-n">{pl.graveyard.length}</span>
 					</div>
 				</div>
 				<div className="pile" title="Exile — click to see it" onClick={() => setZone({ player: p, zone: 'exile' })} onMouseEnter={(e) => topEx && peek(topEx.iid, e)} onMouseLeave={unpeek}>
 					<span className="pile-label">Exile</span>
-					<div className="pile-card" data-anchor={`exile-${p}`}>
+					<div className="pile-card" data-anchor={`exile-${p}`} data-drop={isMe ? 'exile' : undefined}>
 						{topEx ? <CardFaceView def={def(s, topEx.card)} /> : <div className="pile-empty" />}
 						<span className="pile-n">{pl.exile.length}</span>
 					</div>
@@ -473,7 +573,7 @@ export function Board(props: BoardProps) {
 					<span className="pile-label">Command{pl.command.some((o) => pl.commanderCasts[o.card]) ? ` +${commanderTax(s, p, pl.command[0]?.card ?? '')}` : ''}</span>
 					<div className="pile-card" data-anchor={`command-${p}`}>
 						{pl.command.length ? (
-							pl.command.map((o) => <CardFaceView key={o.iid} iid={o.iid} def={def(s, o.card)} className={`${sel?.iid === o.iid ? 'sel' : ''} ${isMe && playable(s, me, o) ? 'playable' : ''} ${hHand.has(o.iid) ? 'hint' : ''}`} onClick={(e) => (e.stopPropagation(), clickCard(o))} onMouseEnter={(e) => peek(o.iid, e)} onMouseLeave={unpeek} />)
+							pl.command.map((o) => <CardFaceView key={o.iid} iid={o.iid} def={def(s, o.card)} className={`${sel?.iid === o.iid ? 'sel' : ''} ${isMe && playable(s, me, o) ? 'playable' : ''} ${hHand.has(o.iid) ? 'hint' : ''}`} onPointerDown={isMe ? (e) => beginDrag(e, o, 'command') : undefined} onClick={(e) => (e.stopPropagation(), clickCard(o))} onMouseEnter={(e) => peek(o.iid, e)} onMouseLeave={unpeek} />)
 						) : (
 							<div className="pile-empty" />
 						)}
@@ -497,6 +597,7 @@ export function Board(props: BoardProps) {
 						className={`${sel?.iid === o.iid ? 'sel' : ''} ${playable(s, me, o) ? 'playable' : ''} ${hHand.has(o.iid) ? 'hint' : ''}`}
 						style={layout === 'console' ? { zIndex: i } : undefined}
 						onClick={() => clickCard(o)}
+						onPointerDown={(e) => beginDrag(e, o, 'hand')}
 						onMouseEnter={(e) => peek(o.iid, e)} onMouseLeave={unpeek}
 					>
 						{o.commander && <span className="badge cmd" title="Your commander — cast it from your hand without commander tax">★</span>}
@@ -542,7 +643,7 @@ export function Board(props: BoardProps) {
 							<button className="zone" title="Library" data-anchor={`library-${p}`} onClick={() => setZone({ player: p, zone: 'library' })}>
 								📚 {pl.library.length}
 							</button>
-							<button className="zone" title="Graveyard" data-anchor={`graveyard-${p}`} onClick={() => setZone({ player: p, zone: 'graveyard' })}>
+							<button className="zone" title="Graveyard" data-anchor={`graveyard-${p}`} data-drop={isMe ? 'graveyard' : undefined} onClick={() => setZone({ player: p, zone: 'graveyard' })}>
 								⚰ {pl.graveyard.length}
 							</button>
 							{pl.exile.length > 0 && (
@@ -556,7 +657,7 @@ export function Board(props: BoardProps) {
 				{layout === 'pocket' && (
 					<span className="command" data-anchor={`command-${p}`}>
 						{pl.command.map((o) => (
-							<CardFaceView key={o.iid} iid={o.iid} def={def(s, o.card)} className={`cmdcard ${sel?.iid === o.iid ? 'sel' : ''} ${isMe && playable(s, me, o) ? 'playable' : ''} ${hHand.has(o.iid) ? 'hint' : ''}`} onClick={() => clickCard(o)} />
+							<CardFaceView key={o.iid} iid={o.iid} def={def(s, o.card)} className={`cmdcard ${sel?.iid === o.iid ? 'sel' : ''} ${isMe && playable(s, me, o) ? 'playable' : ''} ${hHand.has(o.iid) ? 'hint' : ''}`} onPointerDown={isMe ? (e) => beginDrag(e, o, 'command') : undefined} onClick={() => clickCard(o)} />
 						))}
 					</span>
 				)}
@@ -676,7 +777,7 @@ export function Board(props: BoardProps) {
 					openZone={(z) => (setMenu(false), setZone(z))}
 				/>
 			)}
-			{pend.kind === 'over' && !props.coach && <OverModal s={s} me={me} onMenu={props.onMenu} />}
+			{pend.kind === 'over' && !props.coach && !props.busy && <Finale s={s} me={me} perspective={props.bot || props.online ? 'viewer' : 'winner'} animate={props.pace !== 'off' && !(typeof matchMedia === 'function' && matchMedia('(prefers-reduced-motion: reduce)').matches)} onMenu={props.onMenu} />}
 			{toast && (
 				<div className="toast" onClick={() => setToast(null)}>
 					{toast}
@@ -718,13 +819,13 @@ export function Board(props: BoardProps) {
 						☰
 					</button>
 				</div>
-				<div className="p-field them">{field(them, 's')}</div>
-				<div className="p-mid">
+				<div className="p-field them" data-drop="play">{field(them, 's')}</div>
+				<div className="p-mid" data-drop="play">
 					{phaseBar}
 					{stackView}
 					{promptBar}
 				</div>
-				<div className="p-field me">{field(me, 's')}</div>
+				<div className="p-field me" data-drop="play">{field(me, 's')}</div>
 				<div className="p-dock">
 					{playerBar(me)}
 					{handView('s')}
@@ -764,18 +865,18 @@ export function Board(props: BoardProps) {
 				<div className="side them">
 					{playerBar(them)}
 					<div className="fieldrow">
-						<div className="field">{field(them, 'm')}</div>
+						<div className="field" data-drop="play">{field(them, 'm')}</div>
 						{piles(them)}
 					</div>
 				</div>
-				<div className="center">
+				<div className="center" data-drop="play">
 					{phaseBar}
 					{stackView}
 					{promptBar}
 				</div>
 				<div className="side me">
 					<div className="fieldrow">
-						<div className="field">{field(me, 'm')}</div>
+						<div className="field" data-drop="play">{field(me, 'm')}</div>
 						{piles(me)}
 					</div>
 					{playerBar(me)}
@@ -1460,22 +1561,6 @@ function MenuModal(props: BoardProps & { me: number; tool: (m: ManualOp) => bool
 						{s.format.name}: {s.format.life} life{s.format.noCommander ? ', 60-card decks, no commander' : s.format.commanderDamage ? ', 21 commander damage' : ', no commander damage'}. Double-click a land to tap it for mana. Everything the game can’t do by itself, you do with these tools — like at a real table.
 					</p>
 				</section>
-			</div>
-		</Modal>
-	)
-}
-
-function OverModal({ s, me, onMenu }: { s: GameState; me: number; onMenu: () => void }) {
-	const p = s.pending
-	if (p.kind !== 'over') return null
-	return (
-		<Modal title="Game over">
-			<div className="over">
-				<h2>{p.winner === null ? 'Draw' : p.winner === me && !s.players[me].bot ? 'You win!' : `${s.players[p.winner].name} wins`}</h2>
-				<p>{s.players.filter((x) => x.lost).map((x) => `${x.name}: ${x.lost}`).join(' · ')}</p>
-				<button className="primary" onClick={onMenu}>
-					Back to menu
-				</button>
 			</div>
 		</Modal>
 	)

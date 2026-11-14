@@ -1,4 +1,4 @@
-import type { CSSProperties, MouseEvent, ReactNode } from 'react'
+import type { CSSProperties, MouseEvent, PointerEvent, ReactNode } from 'react'
 import type { CardDef } from '../engine/types'
 
 /** Mana symbols as small coloured pips: "{2}{W}{U}" */
@@ -29,11 +29,11 @@ export function Pip({ m, n }: { m: string; n?: number }) {
 }
 
 /** A card face: the Scryfall image when we have it, a simple text frame otherwise. */
-export function CardFaceView({ def, back, style, className, children, onClick, onMouseEnter, onMouseLeave, title, iid }: { iid?: number; def: CardDef; back?: boolean; style?: CSSProperties; className?: string; children?: ReactNode; onClick?: (e: MouseEvent) => void; onMouseEnter?: (e: MouseEvent<HTMLDivElement>) => void; onMouseLeave?: () => void; title?: string }) {
+export function CardFaceView({ def, back, style, className, children, onClick, onMouseEnter, onMouseLeave, title, iid, onPointerDown }: { iid?: number; onPointerDown?: (e: PointerEvent<HTMLDivElement>) => void; def: CardDef; back?: boolean; style?: CSSProperties; className?: string; children?: ReactNode; onClick?: (e: MouseEvent) => void; onMouseEnter?: (e: MouseEvent<HTMLDivElement>) => void; onMouseLeave?: () => void; title?: string }) {
 	const face = back && def.back ? def.back : def
 	const img = back && def.back ? def.back.image : def.image
 	return (
-		<div className={`cardface ${className ?? ''}`} data-iid={iid} style={style} onClick={onClick} onMouseEnter={onMouseEnter} onMouseLeave={onMouseLeave} title={title}>
+		<div className={`cardface ${className ?? ''}`} data-iid={iid} style={style} onClick={onClick} onPointerDown={onPointerDown} onMouseEnter={onMouseEnter} onMouseLeave={onMouseLeave} title={title}>
 			{img ? (
 				<img src={img} alt={face.name} draggable={false} loading="lazy" />
 			) : (

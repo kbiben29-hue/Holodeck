@@ -147,6 +147,37 @@ export const sfx = {
 		;[392, 330, 262, 196].forEach((f, i) => tone(f, 0.4, { type: 'sawtooth', at: i * 0.16, vol: 0.09, filter: 1200 }))
 		noise(0.6, { band: 300, vol: 0.1, at: 0.6 })
 	},
+	/** Going to warp: a rising engine hum and a rush, then the victory fanfare. */
+	warp() {
+		tone(55, 1.9, { type: 'sawtooth', vol: 0.12, to: 880, filter: 900, q: 3 })
+		tone(110, 1.9, { type: 'sine', vol: 0.1, to: 1760 })
+		noise(1.6, { band: 200, sweepTo: 6000, vol: 0.16, q: 0.7, at: 0.3 })
+		noise(0.5, { band: 5000, sweepTo: 400, vol: 0.3, q: 0.5, at: 1.85 })
+		;[523, 659, 784, 1046].forEach((f, i) => tone(f, 0.5, { type: 'square', at: 2.1 + i * 0.13, vol: 0.08, filter: 3200 }))
+		tone(1046, 1.4, { type: 'sawtooth', at: 2.62, vol: 0.06, filter: 2400 })
+	},
+	/** Red alert klaxon: three rising whoops. */
+	redAlert() {
+		for (let i = 0; i < 3; i++) {
+			tone(380, 0.5, { type: 'sawtooth', at: i * 0.62, vol: 0.13, to: 840, filter: 1800, q: 2 })
+			tone(382, 0.5, { type: 'square', at: i * 0.62, vol: 0.05, to: 846, filter: 1200 })
+		}
+	},
+	/** Warp-core breach: a deep boom and a long rumble. */
+	breach() {
+		noise(0.25, { band: 3000, sweepTo: 200, vol: 0.4, q: 0.4 })
+		noise(1.8, { band: 160, sweepTo: 40, vol: 0.45, q: 0.5, at: 0.05 })
+		tone(70, 1.4, { type: 'sine', vol: 0.3, to: 22 })
+		tone(140, 0.8, { type: 'sawtooth', vol: 0.12, to: 40, filter: 500 })
+		;[330, 262, 196, 147].forEach((f, i) => tone(f, 0.6, { type: 'sawtooth', at: 1.6 + i * 0.22, vol: 0.07, filter: 1100 }))
+	},
+	/** Being assimilated: a mechanical drone with digital stutters. */
+	assimilated() {
+		tone(48, 2.6, { type: 'sawtooth', vol: 0.16, filter: 400, q: 6 })
+		tone(96, 2.6, { type: 'square', vol: 0.05, filter: 300 })
+		for (let i = 0; i < 9; i++) noise(0.05, { band: 2000 + (i % 3) * 1800, q: 10, vol: 0.14, at: 0.3 + i * 0.21 })
+		tone(220, 1.2, { type: 'sine', at: 1.4, vol: 0.07, to: 110 })
+	},
 	error() {
 		tone(140, 0.15, { type: 'square', vol: 0.1, filter: 900 })
 	},
@@ -154,7 +185,8 @@ export const sfx = {
 
 /** Pick a sound for a new log line. */
 export function soundFor(line: string, myName: string): (() => void) | null {
-	if (/ loses \(/.test(line)) return line.startsWith(myName) ? sfx.lose : sfx.win
+	// the end of the game has its own sounds (Finale.tsx)
+	if (/ loses \(/.test(line)) return null
 	if (/ dies\.| is destroyed| is exiled| is countered/.test(line)) return sfx.defeat
 	if (/ attacks with /.test(line)) return sfx.attack
 	if (/ deals \d+ damage to /.test(line)) return sfx.steal
