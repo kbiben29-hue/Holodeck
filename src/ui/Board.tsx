@@ -10,7 +10,7 @@ import { cardName, def, findPerm, isCreature, keywords, opp, permName, pt, rules
 import type { CardDef, GameState, Intent, Mana, ManualOp, Obj, Perm, Step } from '../engine/types'
 import { CardBack, CardFaceView, Cost, Pip } from './Card'
 import type { Hint } from './coach'
-import { isMuted, setMuted, soundFor, sfx, unlockAudio } from './sfx'
+import { bigBlast, isMuted, setMuted, soundFor, unlockAudio } from './sfx'
 
 export type LayoutChoice = 'auto' | 'console' | 'pocket'
 
@@ -341,14 +341,24 @@ export function Board(props: BoardProps) {
 	useEffect(() => {
 		const fresh = s.log.slice(logLen.current)
 		logLen.current = s.log.length
-		const played = new Set<() => void>()
-		fresh.slice(-6).forEach((line, i) => {
-			const f = soundFor(line, s.players[me].name)
-			if (f && !played.has(f) && played.size < 3) {
-				played.add(f)
-				window.setTimeout(f, i * 90)
-			}
-		})
+		// what made the sound: the card's type picks the weapon (ships fire phasers, Klingons disruptors…)
+		const byName = new Map<string, { name: string; typeLine: string; oracle: string }>()
+		for (const c of Object.values(s.cards)) if (!byName.has(c.name)) byName.set(c.name, c)
+		const find = (n: string) => byName.get(n) ?? byName.get(n.replace(/ token$/, ''))
+		const deaths = fresh.filter((l) => / dies\.| is destroyed/.test(l)).length
+		const played = new Set<string>()
+		let at = 0
+		if (deaths >= 3) {
+			bigBlast()
+			played.add('boom')
+		}
+		for (const line of fresh.slice(-8)) {
+			const f = soundFor(line, find)
+			if (!f || played.has(f.key) || played.size >= 4) continue
+			played.add(f.key)
+			window.setTimeout(f.play, at)
+			at += 110
+		}
 	}, [s.log.length])
 	const pend = s.pending
 	const toastTimer = useRef<number | undefined>(undefined)

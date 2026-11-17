@@ -31,6 +31,7 @@ function ac(): AudioContext | null {
 			master = ctx.createGain()
 			master.gain.value = 0.35
 			master.connect(ctx.destination)
+			loadSamples(ctx)
 		}
 		if (ctx.state === 'suspended') void ctx.resume()
 		return ctx
@@ -42,6 +43,47 @@ function ac(): AudioContext | null {
 /** Call from any click so the audio context is allowed to start. */
 export function unlockAudio() {
 	ac()
+}
+
+// ───────── recorded effects: Kenney's "Sci-Fi Sounds" (CC0, public domain), in public/sfx ─────────
+
+const SAMPLES = ['phaser1', 'phaser2', 'phaser3', 'disruptor1', 'disruptor2', 'disruptor3', 'borg1', 'borg2', 'torpedo', 'boom1', 'boom2', 'boom3', 'bigboom', 'bigboom2', 'beam1', 'beam2', 'beam3', 'shield', 'computer1', 'computer2', 'door_open', 'door_close', 'engine', 'charge', 'warp', 'clang1', 'clang2', 'assimilate'] as const
+type Sample = (typeof SAMPLES)[number]
+const buffers = new Map<string, AudioBuffer>()
+let loadStarted = false
+
+/** Fetch and decode the recorded effects (once, after the first click unlocks audio). */
+function loadSamples(a: AudioContext) {
+	if (loadStarted || typeof fetch !== 'function') return
+	loadStarted = true
+	for (const n of SAMPLES) {
+		const url = new URL(`sfx/${n}.mp3`, document.baseURI).href
+		fetch(url)
+			.then((r) => (r.ok ? r.arrayBuffer() : Promise.reject(new Error(String(r.status)))))
+			.then((b) => new Promise<AudioBuffer>((res, rej) => a.decodeAudioData(b, res, rej)))
+			.then((buf) => buffers.set(n, buf))
+			.catch(() => {
+				/* synthesized sounds stand in */
+			})
+	}
+}
+
+/** Play one of the recorded effects (a random one of several takes); false if it isn't loaded. */
+function sample(names: Sample | Sample[], opts: { at?: number; vol?: number; rate?: number } = {}): boolean {
+	const a = ac()
+	if (!a || !master) return false
+	const list = Array.isArray(names) ? names : [names]
+	const name = list[Math.floor(Math.random() * list.length)]
+	const buf = buffers.get(name)
+	if (!buf) return false
+	const src = a.createBufferSource()
+	src.buffer = buf
+	src.playbackRate.value = (opts.rate ?? 1) * (0.96 + Math.random() * 0.08)
+	const g = a.createGain()
+	g.gain.value = opts.vol ?? 0.8
+	src.connect(g).connect(master)
+	src.start(a.currentTime + (opts.at ?? 0))
+	return true
 }
 
 type Wave = OscillatorType
@@ -149,6 +191,8 @@ export const sfx = {
 	},
 	/** Going to warp: a rising engine hum and a rush, then the victory fanfare. */
 	warp() {
+		sample('warp', { vol: 0.9 })
+		sample('engine', { at: 1.2, vol: 0.5, rate: 1.4 })
 		tone(55, 1.9, { type: 'sawtooth', vol: 0.12, to: 880, filter: 900, q: 3 })
 		tone(110, 1.9, { type: 'sine', vol: 0.1, to: 1760 })
 		noise(1.6, { band: 200, sweepTo: 6000, vol: 0.16, q: 0.7, at: 0.3 })
@@ -165,6 +209,9 @@ export const sfx = {
 	},
 	/** Warp-core breach: a deep boom and a long rumble. */
 	breach() {
+		sample('bigboom', { vol: 1 })
+		sample(['boom2', 'boom3'], { at: 0.25, vol: 0.8 })
+		sample('bigboom2', { at: 0.6, vol: 0.7 })
 		noise(0.25, { band: 3000, sweepTo: 200, vol: 0.4, q: 0.4 })
 		noise(1.8, { band: 160, sweepTo: 40, vol: 0.45, q: 0.5, at: 0.05 })
 		tone(70, 1.4, { type: 'sine', vol: 0.3, to: 22 })
@@ -173,6 +220,9 @@ export const sfx = {
 	},
 	/** Being assimilated: a mechanical drone with digital stutters. */
 	assimilated() {
+		sample('assimilate', { vol: 0.9, rate: 0.7 })
+		sample('computer1', { at: 0.4, vol: 0.6 })
+		sample('assimilate', { at: 1.2, vol: 0.8, rate: 0.6 })
 		tone(48, 2.6, { type: 'sawtooth', vol: 0.16, filter: 400, q: 6 })
 		tone(96, 2.6, { type: 'square', vol: 0.05, filter: 300 })
 		for (let i = 0; i < 9; i++) noise(0.05, { band: 2000 + (i % 3) * 1800, q: 10, vol: 0.14, at: 0.3 + i * 0.21 })
@@ -183,18 +233,75 @@ export const sfx = {
 	},
 }
 
-/** Pick a sound for a new log line. */
-export function soundFor(line: string, myName: string): (() => void) | null {
+
+// ───────── what each moment of the game sounds like ─────────
+
+type Card = { name: string; typeLine: string; oracle: string }
+type Lookup = (name: string) => Card | undefined
+
+/** Ship weapons for Spacecraft, cutting beams for the Borg, disruptors for Klingons, sidearms for everyone else;
+ * spells and abilities that aren't creatures fire torpedoes. */
+function weapon(src: Card | undefined, big: boolean) {
+	const t = src?.typeLine ?? ''
+	if (/Spacecraft/.test(t)) return () => (sample(big ? 'phaser1' : ['phaser2', 'phaser3']) || sfx.attack())
+	if (/Borg/.test(t)) return () => (sample(['borg1', 'borg2']) || sfx.steal())
+	if (/Klingon|Warrior/.test(t)) return () => (sample(['disruptor1', 'disruptor2', 'disruptor3']) || sfx.steal())
+	if (/Creature/.test(t)) return () => (sample(['disruptor2', 'phaser3'], { rate: 1.15 }) || sfx.steal())
+	// a spell, an artifact, an enchantment: photon torpedo — launch, then the hit
+	return () => {
+		if (!sample('torpedo', { vol: 0.7, rate: 1.3 })) return sfx.steal()
+		sample(['boom1', 'boom3'], { at: 0.32, vol: 0.55, rate: 1.2 })
+	}
+}
+
+/** Pick a sound for a new log line (with the card pool, to know what kind of card did it). */
+export function soundFor(line: string, find: Lookup = () => undefined): { key: string; play: () => void } | null {
 	// the end of the game has its own sounds (Finale.tsx)
 	if (/ loses \(/.test(line)) return null
-	if (/ dies\.| is destroyed| is exiled| is countered/.test(line)) return sfx.defeat
-	if (/ attacks with /.test(line)) return sfx.attack
-	if (/ deals \d+ damage to /.test(line)) return sfx.steal
-	if (/ casts .+ from|returns to the command zone/.test(line)) return sfx.legend
-	if (/ casts /.test(line)) return sfx.program
-	if (/ plays |enters the battlefield/.test(line)) return sfx.play
-	if (/ draws /.test(line)) return sfx.draw
-	if (/charge counters|creates /.test(line)) return sfx.sell
-	if (/^— Turn/.test(line)) return sfx.turn
+	let m: RegExpMatchArray | null
+	if ((m = line.match(/^(.+) deals (\d+) damage to (.+)\.$/))) {
+		const src = find(m[1])
+		const n = Number(m[2])
+		const toPlayer = !find(m[3])
+		const shot = weapon(src, n >= 5)
+		return {
+			key: `dmg:${m[1]}`,
+			play: () => {
+				shot()
+				// shields flare on a ship (player); hull rings on a creature
+				if (toPlayer) sample('shield', { at: 0.14, vol: 0.35 + Math.min(0.4, n * 0.05) })
+				else sample(['clang1', 'clang2'], { at: 0.14, vol: 0.4 })
+			},
+		}
+	}
+	if (/ dies\.| is destroyed/.test(line)) return { key: 'boom', play: () => sample(['boom1', 'boom2', 'boom3'], { vol: 0.75 }) || sfx.defeat() }
+	if (/ is exiled|returns to its owner's hand|is put into its owner's library|phase/.test(line)) return { key: 'beam', play: () => sample(['beam1', 'beam3'], { vol: 0.6 }) || sfx.defeat() }
+	if (/ is countered/.test(line)) return { key: 'shield', play: () => sample('shield', { vol: 0.7, rate: 0.8 }) || sfx.defeat() }
+	if (/ assimilates /.test(line)) return { key: 'borg', play: () => (sample('assimilate', { vol: 0.8 }) ? sample('computer2', { at: 0.2, vol: 0.4 }) : sfx.program()) }
+	if ((m = line.match(/ attacks with (.+)\.$/))) {
+		const ships = m[1].split(', ').some((n) => /Spacecraft/.test(find(n)?.typeLine ?? ''))
+		return { key: 'attack', play: () => sample(ships ? 'engine' : 'door_open', { vol: ships ? 0.6 : 0.5, rate: ships ? 1.2 : 0.8 }) || sfx.attack() }
+	}
+	if (/ blocks: /.test(line)) return { key: 'block', play: () => sample('shield', { vol: 0.55 }) || sfx.click() }
+	if (/ casts .+ from|returns to the command zone/.test(line)) return { key: 'legend', play: () => (sample('door_open', { vol: 0.6 }), sfx.legend()) }
+	if ((m = line.match(/ casts (.+?)(?: targeting .+)?(?: without paying its mana cost| with flashback| \(X=\d+\)| \(kicked\))*\.$/))) return { key: 'cast', play: () => sample(['computer1', 'computer2'], { vol: 0.45 }) || sfx.program() }
+	if ((m = line.match(/^(.+) enters the battlefield\.$/))) {
+		const c = find(m[1])
+		const t = c?.typeLine ?? ''
+		if (/Spacecraft/.test(t)) return { key: 'enter', play: () => sample('engine', { vol: 0.55 }) || sfx.play() }
+		if (/Creature/.test(t)) return { key: 'enter', play: () => sample('beam2', { vol: 0.45, rate: 1.1 }) || sfx.play() }
+		if (/Artifact/.test(t)) return { key: 'enter', play: () => sample(['clang1', 'clang2'], { vol: 0.45 }) || sfx.play() }
+		return { key: 'enter', play: () => sfx.play() }
+	}
+	if (/ plays /.test(line)) return { key: 'land', play: () => sfx.play() }
+	if (/ creates /.test(line)) return { key: 'token', play: () => sample('beam2', { vol: 0.45, rate: 1.25 }) || sfx.sell() }
+	if (/charge counter|Station/.test(line)) return { key: 'charge', play: () => sample('charge', { vol: 0.5 }) || sfx.sell() }
+	if (/ gains \d+ life/.test(line)) return { key: 'life', play: () => sample('shield', { vol: 0.35, rate: 1.3 }) || sfx.sell() }
+	if (/ draws /.test(line)) return { key: 'draw', play: () => sfx.draw() }
+	if (/additional combat phase|Red alert/i.test(line)) return { key: 'combat', play: () => sfx.redAlert() }
+	if (/^— Turn/.test(line)) return { key: 'turn', play: () => sample('door_close', { vol: 0.35 }) || sfx.turn() }
 	return null
 }
+
+/** Several things died at once: one big blast instead of a crackle of small ones. */
+export const bigBlast = () => sample(['bigboom', 'bigboom2'], { vol: 0.9 }) || sfx.defeat()
