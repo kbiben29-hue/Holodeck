@@ -8,7 +8,8 @@ Every push to `main` rebuilds all three (`.github/workflows/release.yml`); the l
 
 Holodeck is a two-player table for the four **Magic: The Gathering | Star Trek Commander decks**
 (Federation Fleet, Landing Party, Klingon Fury, We Are the Borg) and the four **The Lord of the Rings: Tales of
-Middle-earth Commander decks** (Riders of Rohan, Food and Fellowship, Elven Council, The Hosts of Mordor). It's a fan project with no official
+Middle-earth Commander decks** (Riders of Rohan, Food and Fellowship, Elven Council, The Hosts of Mordor), plus the four **Bloomburrow Commander
+decks** (Animated Army, Family Matters, Peace Offering, Squirreled Away). It's a fan project with no official
 standing; card text and images are loaded from [Scryfall](https://scryfall.com) on your own device.
 
 - **Sound effects** are public-domain (CC0) recordings from Kenney's packs — see `public/sfx/README.md`. No music.

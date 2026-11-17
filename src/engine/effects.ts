@@ -223,6 +223,9 @@ export function runCompiled(ctx: Ctx, item: StackItem, compiled: Compiled, keyPr
 			case 'bounce':
 				for (const p of tperms(e.t)) H().move(s, p.iid, 'hand')
 				break
+			case 'cond':
+				if (!!item.kicked === (e.when === 'kicked')) runCompiled(ctx, item, { ...compiled, effects: e.effects, optional: false, ifKicked: false }, k)
+				break
 			case 'tempt':
 				H().tempt(ctx, me, k)
 				break

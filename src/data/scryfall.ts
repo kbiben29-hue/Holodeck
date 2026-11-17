@@ -148,17 +148,17 @@ export async function loadCards(names: string[], progress?: (f: number, text: st
 	const cached = readCache()
 	const want = names.map((n) => slug(n))
 	if (!force && cached && Date.now() - cached.loadedAt < MAX_AGE && want.every((id) => cached.cards[id])) return cached
-	progress?.(0.02, 'Finding the Star Trek and Middle-earth sets…')
+	progress?.(0.02, 'Finding the card sets…')
 	const sets = await starTrekSets()
 	const found = new Map<string, SfCard>()
 	let todo = names.slice()
 	const batches = (arr: unknown[]) => Math.ceil(arr.length / 75)
 	let done = 0
-	const totalSteps = batches(todo) * (Math.min(2, sets.length) + 3) + 4
+	const totalSteps = batches(todo) * (Math.min(2, sets.length) + 5) + 4
 	const step = (text: string) => progress?.(Math.min(0.95, ++done / totalSteps), text)
 	// pass 1..n: the Star Trek printing; last pass: any printing
 	// Star Trek printings first, then Tales of Middle-earth (Commander decks, main set), then any printing
-	for (const set of [...sets.slice(0, 2), 'ltc', 'ltr', null]) {
+	for (const set of [...sets.slice(0, 2), 'ltc', 'ltr', 'blc', 'blb', null]) {
 		if (!todo.length) break
 		const next: string[] = []
 		for (let i = 0; i < todo.length; i += 75) {

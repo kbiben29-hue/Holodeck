@@ -1,11 +1,12 @@
-// The Commander decks: the four Magic: The Gathering | Star Trek decks (official decklists, Nov 2026) and the four
-// The Lord of the Rings: Tales of Middle-earth decks (official decklists, June 2023).
+// The Commander decks: the four Magic: The Gathering | Star Trek decks (official decklists, Nov 2026), the four
+// The Lord of the Rings: Tales of Middle-earth decks (official decklists, June 2023) and the four Bloomburrow decks
+// (official decklists, June 2024).
 // Names only; card details and images are loaded from Scryfall on the player's device.
 
 export interface StarterDeck {
 	id: string
-	/** Which game the deck comes from: Star Trek (default) or The Lord of the Rings (Middle-earth). */
-	world?: 'trek' | 'me'
+	/** Which game the deck comes from: Star Trek (default), The Lord of the Rings (Middle-earth) or Bloomburrow. */
+	world?: 'trek' | 'me' | 'bb'
 	/** The two legends are partners ("Partner with"): they can lead the deck together. */
 	partners?: boolean
 	name: string
@@ -765,6 +766,382 @@ Path of Ancestry
 Rogue's Passage
 Terramorphic Expanse`),
 	},
+	{
+		id: 'animated',
+		world: 'bb',
+		name: 'Animated Army',
+		colors: 'RG',
+		commander: 'Bello, Bard of the Brambles',
+		alt: 'Wildsear, Scouring Maw',
+		basics: [['Mountain', 8], ['Forest', 10]],
+		cards: split(`
+Wildsear, Scouring Maw
+Domri, Anarch of Bolas
+Etali, Primal Storm
+Prosperous Bandit
+Pyreswipe Hawk
+Alchemist's Talent
+Berserkers' Onslaught
+Outpost Siege
+Rain of Riches
+Chaos Warp
+Sunbird's Invocation
+Gratuitous Violence
+Warstorm Surge
+Starstorm
+Lotus Cobra
+Evercoat Ursine
+Brightcap Badger
+Trailtracker Scout
+Thickest in the Thicket
+Ghalta, Primal Hunger
+Esika's Chariot
+Unnatural Growth
+Greater Good
+Kodama of the East Tree
+Grothama, All-Devouring
+Rampaging Baloths
+Bootleggers' Stash
+Primeval Bounty
+Gilded Lotus
+Spine of Ish Sah
+Temple of Abandon
+Karplusan Forest
+Exotic Orchard
+Sheltered Thicket
+Game Trail
+Raging Ravine
+Copperline Gorge
+Mossfire Valley
+Cinder Glade
+Rootbound Crag
+Mosswort Bridge
+Blasphemous Act
+Llanowar Loamspeaker
+Tendershoot Dryad
+Goreclaw, Terror of Qal Sisma
+Path of Discovery
+Decimate
+Rolling Hamsphere
+Teapot Slinger
+Explore
+Farseek
+Cultivate
+Grumgully, the Generous
+Wandertale Mentor
+Thought Vessel
+Arcane Signet
+Wooded Ridgeline
+Big Score
+Abrade
+Rampant Growth
+Sakura-Tribe Elder
+Beast Within
+Garruk's Packleader
+Harmonize
+Garruk's Uprising
+Gruul Signet
+Burnished Hart
+Hedron Archive
+Fellwar Stone
+Thran Dynamo
+Sol Ring
+Mind Stone
+Talisman of Impulse
+Terramorphic Expanse
+Path of Ancestry
+Gruul Turf
+Evolving Wilds
+Forgotten Cave
+Tranquil Thicket
+Command Tower
+Reliquary Tower`),
+	},
+	{
+		id: 'family',
+		world: 'bb',
+		name: 'Family Matters',
+		colors: 'WUR',
+		commander: "Zinnia, Valley's Voice",
+		alt: 'Arthur, Marigold Knight',
+		basics: [['Plains', 5], ['Island', 4], ['Mountain', 4]],
+		cards: split(`
+Arthur, Marigold Knight
+Elspeth, Sun's Champion
+Jazal Goldmane
+Martial Coup
+Storm of Souls
+Selfless Spirit
+Murmuration
+Blade Splicer
+Hanged Executioner
+Loyal Warhound
+Restoration Angel
+Jacked Rabbit
+Skyclave Apparition
+Dusk // Dawn
+Boss's Chauffeur
+Angel of the Ruins
+Luminous Broodmoth
+Sun Titan
+Pollywog Prodigy
+Fortune Teller's Talent
+Aether Channeler
+Pull from Tomorrow
+Shield Broker
+Stolen by the Fae
+Rapid Augmenter
+Bident of Thassa
+Curiosity Crafter
+Devilish Valet
+Siege-Gang Commander
+Echoing Assault
+Agate Instigator
+Calamity of Cinders
+Rose Room Treasurer
+Combat Celebrant
+Inferno Titan
+Time Wipe
+Solemn Simulacrum
+Helm of the Host
+Glacial Fortress
+Adarkar Wastes
+Temple of Enlightenment
+Castle Ardenvale
+Seachrome Coast
+Sulfur Falls
+Cascade Bluffs
+Exotic Orchard
+Clifftop Retreat
+Shivan Reef
+Temple of Triumph
+Battlefield Forge
+Skycloud Expanse
+Temple of Epiphany
+Ferrous Lake
+Rugged Prairie
+Sunscorched Divide
+Spirited Companion
+Inspiring Overseer
+Cut a Deal
+Path to Exile
+Illusory Ambusher
+Rowdy Research
+Plumecreed Escort
+Rapid Hybridization
+Junk Winder
+Aetherize
+Chart a Course
+Tetsuko Umezawa, Fugitive
+Thopter Engineer
+Cloudblazer
+Arcane Signet
+Boros Signet
+Ornithopter of Paradise
+Azorius Signet
+Izzet Signet
+Circuit Mender
+Fellwar Stone
+Sol Ring
+Mind Stone
+Terramorphic Expanse
+Path of Ancestry
+Thriving Heath
+Evolving Wilds
+Thriving Isle
+Thriving Bluff
+Command Tower
+Mystic Monastery`),
+	},
+	{
+		id: 'peace',
+		world: 'bb',
+		name: 'Peace Offering',
+		colors: 'WUG',
+		commander: 'Ms. Bumbleflower',
+		alt: 'Mr. Foxglove',
+		basics: [['Plains', 4], ['Island', 4], ['Forest', 4]],
+		cards: split(`
+Mr. Foxglove
+Tamiyo, Field Researcher
+Tenuous Truce
+Loran of the Third Path
+Steelburr Champion
+Tempt with Bunnies
+Perch Protection
+Sunscorch Regent
+Promise of Loyalty
+Hoofprints of the Stag
+Mangara, the Diplomat
+Realm-Cloaked Giant
+Sphinx of Enlightenment
+Forgotten Ancient
+Bloodroot Apothecary
+Communal Brewing
+Managorger Hydra
+Rishkar, Peema Renegade
+Rites of Flourishing
+Tempt with Discovery
+Kalonian Hydra
+Faeburrow Elder
+Exotic Orchard
+Simic Ascendancy
+Ghirapur Orrery
+Psychosis Crawler
+Adarkar Wastes
+Temple of Enlightenment
+Seachrome Coast
+Glacial Fortress
+Hinterland Harbor
+Razorverge Thicket
+Flooded Grove
+Skycloud Expanse
+Canopy Vista
+Prairie Stream
+Brushland
+Temple of Mystery
+Yavimaya Coast
+Overflowing Basin
+Sungrass Prairie
+Sunpetal Grove
+Triskaidekaphile
+Octomancer
+Twenty-Toed Toad
+Intellectual Offering
+Illusionist's Gambit
+Body of Knowledge
+Chasm Skulker
+Perplexing Test
+Jolrael, Mwonvuli Recluse
+Fisher's Talent
+Selvala, Explorer Returned
+Kwain, Itinerant Meddler
+Coveted Jewel
+Temple of Plenty
+Generous Gift
+Swords to Plowshares
+Secret Rendezvous
+Baird, Steward of Argive
+An Offer You Can't Refuse
+Wizard Class
+Cultivate
+Farseek
+Broken Wings
+Spore Frog
+Wear Down
+Peerless Recycling
+Coiling Oracle
+Riot Control
+Martial Impetus
+Jolly Gerbils
+Long River's Pull
+Thought Vessel
+Arcane Signet
+Swiftfoot Boots
+Fellwar Stone
+Sol Ring
+Mind Stone
+Thriving Heath
+Thriving Isle
+Thriving Grove
+Terramorphic Expanse
+Command Tower
+Evolving Wilds
+Reliquary Tower
+Seaside Citadel`),
+	},
+	{
+		id: 'squirrel',
+		world: 'bb',
+		name: 'Squirreled Away',
+		colors: 'BG',
+		commander: 'Hazel of the Rootbloom',
+		alt: 'The Odd Acorn Gang',
+		basics: [['Swamp', 8], ['Forest', 9]],
+		cards: split(`
+The Odd Acorn Gang
+Garruk, Cursed Huntsman
+Chittering Witch
+Insatiable Frugivore
+Moonstone Eulogist
+Swarmyard Massacre
+Hazel's Brewmaster
+Woe Strider
+Saw in Half
+Ogre Slumlord
+Decree of Pain
+Gourmand's Talent
+Rootcast Apprenticeship
+Scurry of Squirrels
+End-Raze Forerunners
+Arasta of the Endless Web
+Deep Forest Hermit
+Toski, Bearer of Secrets
+Beastmaster Ascension
+Second Harvest
+Shamanic Revelation
+Chatterfang, Squirrel General
+Temple of Malady
+Casualties of War
+Windgrace's Judgment
+Maskwood Nexus
+Academy Manufactor
+Woodland Cemetery
+Necroblossom Snarl
+Oran-Rief, the Vastwood
+Swarmyard
+Exotic Orchard
+Llanowar Wastes
+Grim Backwoods
+Viridescent Bog
+Twilight Mire
+Gilded Goose
+Chitterspitter
+Maelstrom Pulse
+Beledros Witherbloom
+Idol of Oblivion
+Sword of the Squeak
+Morbid Opportunist
+Nadier's Nightblade
+Plumb the Forbidden
+Bastion of Remembrance
+Plaguecrafter
+Cache Grab
+Chatterstorm
+Poison-Tip Archer
+Moldervine Reclamation
+Ravenous Squirrel
+Skyfisher Spider
+Binding the Old Gods
+Golgari Rot Farm
+Jungle Hollow
+Haunted Mire
+Nested Shambler
+Deadly Dispute
+Zulaport Cutthroat
+Squirrel Sovereign
+Prosperous Innkeeper
+Haywire Mite
+Tireless Provisioner
+Squirrel Nest
+Honored Dreyleader
+Tear Asunder
+Wolfwillow Haven
+Putrefy
+Arcane Signet
+Golgari Signet
+Talisman of Resilience
+Sol Ring
+Skullclamp
+Terramorphic Expanse
+Path of Ancestry
+Evolving Wilds
+Command Tower
+Tranquil Thicket
+Bojuka Bog
+Tainted Wood
+Barren Moor`),
+	},
 ]
 
 /** All card names the decks use (for loading). */
@@ -865,9 +1242,9 @@ export function sixtyCards(d: StarterDeck, pool: Record<string, CutInfo | undefi
 
 // ───────── which world a card or player belongs to ─────────
 
-let worldIndex: Map<string, 'trek' | 'me' | 'both'> | null = null
-/** 'trek' or 'me' for a card that's only in one world's decks; undefined for shared cards (Sol Ring…) or tokens. */
-export function worldOfName(name: string): 'trek' | 'me' | undefined {
+let worldIndex: Map<string, 'trek' | 'me' | 'bb' | 'both'> | null = null
+/** 'trek', 'me' or 'bb' for a card that's only in one world's decks; undefined for shared cards (Sol Ring…) or tokens. */
+export function worldOfName(name: string): 'trek' | 'me' | 'bb' | undefined {
 	if (!worldIndex) {
 		worldIndex = new Map()
 		for (const d of DECKS)

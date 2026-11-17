@@ -19,6 +19,7 @@ import {
 	hasKw,
 	isCreature,
 	isType,
+	basePT,
 	keywords,
 	locate,
 	log,
@@ -210,6 +211,26 @@ export function castFree(s: GameState, p: number, iid: number) {
 		return
 	}
 	s.tasks.unshift({ tid: s.nextId++, kind: 'cast', player: p, answers: {}, data: { iid, free: true } })
+}
+
+// ───────── Bloomburrow: gifts ─────────
+
+function giveGift(s: GameState, to: number, gift: NonNullable<Rules['gift']>) {
+	const name = s.players[to].name
+	if (gift === 'card') {
+		log(s, `${name} gets a gift: a card.`)
+		drawCards(s, to, 1)
+	} else if (gift === 'food') {
+		log(s, `${name} gets a gift: a Food.`)
+		createToken(s, to, makeTokenDef(s, { e: 'token', n: 1, name: 'Food', types: 'Artifact — Food', colors: [], keywords: [], artifact: true }, 0), 1)
+	} else if (gift === 'extra turn') {
+		log(s, `${name} gets a gift: an extra turn after this one.`)
+		;(s.extraTurns ??= []).push(to)
+	} else {
+		const octo = gift.includes('octopus')
+		log(s, `${name} gets a gift: ${octo ? 'an 8/8 Octopus' : 'a 1/1 Fish'}.`)
+		createToken(s, to, makeTokenDef(s, { e: 'token', n: 1, name: octo ? 'Octopus' : 'Fish', power: octo ? 8 : 1, toughness: octo ? 8 : 1, types: octo ? 'Creature — Octopus' : 'Creature — Fish', colors: ['U'], keywords: [] }, 0), 1, gift.startsWith('tapped'))
+	}
 }
 
 // ───────── the One Ring (Middle-earth) ─────────
@@ -847,15 +868,21 @@ function doCast(ctx: Ctx) {
 	let kicked = 0
 	const extra = r.kicker ?? r.multikicker ?? r.squad
 	if (extra && !free) {
-		const many = !r.kicker
+		const many = !r.kicker && !r.offspring
 		const opts: { id: string; label: string; score: number }[] = []
 		for (let k = 0; k <= (many ? 6 : 1); k++) {
 			let c2 = cost
 			for (let j = 0; j < k; j++) c2 = joinCost(c2, parseCost(extra))
-			if (canPay(s, p, c2, 0)) opts.push({ id: String(k), label: k === 0 ? `Don\u2019t pay ${r.kicker ? 'kicker' : r.squad ? 'squad' : 'multikicker'}` : `Pay ${extra}${many ? ` ×${k}` : ''}`, score: k })
+			if (canPay(s, p, c2, 0)) opts.push({ id: String(k), label: k === 0 ? `Don\u2019t pay ${r.kicker ? 'kicker' : r.offspring ? 'offspring' : r.squad ? 'squad' : 'multikicker'}` : `Pay ${extra}${many ? ` ×${k}` : ''}`, score: k })
 		}
-		if (opts.length > 1) kicked = Number(ctx.ask(p, { key: 'kick', prompt: `${cardName(s, card)}: pay ${r.kicker ? 'kicker' : r.squad ? 'squad (one copy each)' : 'multikicker'} ${extra}?`, options: opts, min: 1, max: 1 })[0])
+		if (opts.length > 1) kicked = Number(ctx.ask(p, { key: 'kick', prompt: `${cardName(s, card)}: pay ${r.kicker ? 'kicker' : r.offspring ? 'offspring (a 1/1 copy)' : r.squad ? 'squad (one copy each)' : 'multikicker'} ${extra}?`, options: opts, min: 1, max: 1 })[0])
 		for (let j = 0; j < kicked; j++) cost = joinCost(cost, parseCost(extra))
+	}
+	// gift: promise the opponent something to get the spell's bonus ("if the gift was promised" counts as kicked)
+	if (r.gift && !free) {
+		const what: Record<string, string> = { card: 'draws a card', food: 'gets a Food', fish: 'gets a 1/1 Fish', 'tapped fish': 'gets a tapped 1/1 Fish', 'extra turn': 'takes an extra turn', octopus: 'gets an 8/8 Octopus', 'tapped octopus': 'gets a tapped 8/8 Octopus' }
+		const [g] = ctx.ask(p, { key: 'gift', prompt: `${cardName(s, card)}: promise a gift? (${s.players[opp(p)].name} ${what[r.gift]} and you get the bonus)`, options: [{ id: 'yes', label: 'Promise the gift', score: r.gift === 'extra turn' || r.gift.includes('octopus') ? -1 : 1 }, { id: 'no', label: 'No gift', score: 0 }], min: 1, max: 1 })
+		if (g === 'yes') kicked = 1
 	}
 	let x = 0
 	if (cost.x > 0) {
@@ -1088,6 +1115,7 @@ function doResolve(ctx: Ctx) {
 	if (it.kind === 'spell') {
 		const back = it.ability === -1
 		const r = rulesOf(s, { card: it.card, flipped: back })
+		if (r.gift && it.kicked && !it.copy) giveGift(s, opp(me), r.gift)
 		if (!isPermanentCard(s, it.card, back)) {
 			const comp = it.modes ? modalCompiled(r, it.modes) : spellCompiled(s, it.card, back)
 			if (comp && !it.manual) {
@@ -1127,7 +1155,15 @@ function doResolve(ctx: Ctx) {
 				if (perm) perm.attachedTo = host.iid
 			} else moveCard(s, o.iid, 'battlefield', { controller: me, flipped: back, kicked: it.kicked, x: it.x })
 			// squad: token copies
-			if (r.squad && it.kicked) createToken(s, me, it.card, it.kicked)
+			if (r.squad && it.kicked)
+				for (const tid of createToken(s, me, it.card, r.offspring ? 1 : it.kicked)) {
+					// offspring: the copy is 1/1
+					const tok = r.offspring ? findPerm(s, tid) : undefined
+					if (tok) {
+						const [bp, bt] = basePT(s, tok)
+						tok.mods.push({ power: 1 - bp, toughness: 1 - bt, until: 'perm', note: 'offspring' })
+					}
+				}
 			log(s, `${cardName(s, it.card)} enters the battlefield.`)
 		}
 		return
@@ -1441,10 +1477,22 @@ function nextStep(s: GameState) {
 		return enterStep(s, 'beginCombat')
 	}
 	if (s.step === 'cleanup') {
+		// extra turns (a gift) come before the next player's turn
+		const extra = s.extraTurns?.shift()
+		if (extra !== undefined) {
+			s.extraCombats = 0
+			s.extraCombatsNow = 0
+			s.untapAtExtra = 0
+			// whoever would normally have gone next still does, after the extra turn
+			s.afterExtra ??= opp(s.active)
+			s.active = extra
+			return enterStep(s, 'untap')
+		}
 		s.extraCombats = 0
 		s.extraCombatsNow = 0
 		s.untapAtExtra = 0
-		s.active = opp(s.active)
+		s.active = s.afterExtra ?? opp(s.active)
+		s.afterExtra = undefined
 		return enterStep(s, 'untap')
 	}
 	if (s.step === 'endCombat') {

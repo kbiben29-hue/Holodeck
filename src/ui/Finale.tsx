@@ -45,6 +45,18 @@ const ME_LOSE: Record<string, string> = {
 	elven: 'Elven arrows and old magic turned the battle against you.',
 	mordor: 'The Shadow spreads across your lands.',
 }
+const BB_WIN: Record<string, string> = {
+	animated: 'The bard strikes up a song, and every pot and kettle in the valley dances along.',
+	family: 'The whole family made it home — and they brought friends.',
+	peace: 'Gifts were given, friends were made, and somehow you won anyway.',
+	squirrel: 'The larder is full, and the squirrels rule the woods.',
+}
+const BB_LOSE: Record<string, string> = {
+	animated: 'A forge-fire army rolled over your burrow.',
+	family: 'Too many cousins to count — and all of them fighting.',
+	peace: 'You took the gifts. Then the hydras came.',
+	squirrel: 'The squirrels came back. They always come back.',
+}
 const LOSE_LINE: Record<Faction, string> = {
 	federation: 'Your ship was outmanoeuvred by a Starfleet crew.',
 	landing: 'The landing party out-thought you, one world at a time.',
@@ -60,13 +72,16 @@ export function Finale({ s, me, perspective, animate, onMenu }: { s: GameState; 
 	const foe = 1 - hero
 	const foeFaction = factionOf(s, foe)
 	// Middle-earth decks get a Middle-earth ending: the sun rises on a victory, the shadow falls on a defeat
-	const middle = playerWorld(s, hero) === 'me'
+	// Bloomburrow decks get a meadow at dusk with fireflies for a win and a thunderstorm for a loss
+	const world = playerWorld(s, hero)
+	const middle = world === 'me' || world === 'bb'
+	const valley = world === 'bb'
 	const meHero = playerDeck(s, hero)?.id ?? ''
 	const meFoe = playerDeck(s, foe)?.id ?? ''
 	const assimilated = !middle && outcome === 'lose' && foeFaction === 'borg'
-	const scene = middle ? (outcome === 'win' ? 'dawn' : outcome === 'lose' ? 'shadow' : 'draw') : outcome === 'win' ? 'warp' : outcome === 'lose' ? (assimilated ? 'borg' : 'breach') : 'draw'
+	const scene = valley ? (outcome === 'win' ? 'meadow' : outcome === 'lose' ? 'storm' : 'draw') : middle ? (outcome === 'win' ? 'dawn' : outcome === 'lose' ? 'shadow' : 'draw') : outcome === 'win' ? 'warp' : outcome === 'lose' ? (assimilated ? 'borg' : 'breach') : 'draw'
 	// the panel arrives once the show is over
-	const delay = !animate ? 0 : scene === 'warp' ? 2300 : scene === 'breach' ? 3300 : scene === 'borg' ? 2900 : scene === 'dawn' ? 2600 : scene === 'shadow' ? 3000 : 600
+	const delay = !animate ? 0 : scene === 'warp' ? 2300 : scene === 'breach' ? 3300 : scene === 'borg' ? 2900 : scene === 'dawn' ? 2600 : scene === 'shadow' ? 3000 : scene === 'meadow' ? 2800 : scene === 'storm' ? 3000 : 600
 	const [panel, setPanel] = useState(delay === 0)
 	const [hidden, setHidden] = useState(false)
 	const [warp, setWarp] = useState(1)
@@ -74,7 +89,10 @@ export function Finale({ s, me, perspective, animate, onMenu }: { s: GameState; 
 	const root = useRef<HTMLDivElement>(null)
 
 	useEffect(() => {
-		if (middle) {
+		if (valley) {
+			if (outcome === 'win') (animate ? sfx.meadow : sfx.win)()
+			else if (outcome === 'lose') (animate ? sfx.storm : sfx.lose)()
+		} else if (middle) {
 			if (outcome === 'win') (animate ? sfx.dawn : sfx.win)()
 			else if (outcome === 'lose') (animate ? sfx.shadow : sfx.lose)()
 		} else if (outcome === 'win') (animate ? sfx.warp : sfx.win)()
@@ -216,6 +234,99 @@ export function Finale({ s, me, perspective, animate, onMenu }: { s: GameState; 
 					g.lineTo(W, H)
 					g.fill()
 				}
+			} else if (scene === 'meadow') {
+				// a summer meadow at dusk: warm sky, swaying grass, fireflies and drifting petals
+				const f = Math.min(1, t / 2)
+				const sky = g.createLinearGradient(0, 0, 0, H)
+				sky.addColorStop(0, `rgba(${40 + 60 * f},${50 + 60 * f},${90 + 40 * f},${f})`)
+				sky.addColorStop(0.7, `rgba(${200 + 40 * f},${150 + 40 * f},${110},${f})`)
+				sky.addColorStop(1, `rgba(255,214,150,${f})`)
+				g.clearRect(0, 0, W, H)
+				g.fillStyle = sky
+				g.fillRect(0, 0, W, H)
+				// the hill and its grass
+				for (let layer = 0; layer < 2; layer++) {
+					g.fillStyle = ['#3d6a2a', '#2a4d1c'][layer]
+					g.beginPath()
+					g.moveTo(0, H)
+					for (let x = 0; x <= W; x += 16) g.lineTo(x, H * (0.74 + layer * 0.08) - Math.sin(x / (220 - layer * 60) + layer) * 24)
+					g.lineTo(W, H)
+					g.fill()
+				}
+				g.strokeStyle = '#4f8a33'
+				g.lineWidth = 2
+				for (let x = 0; x < W; x += 9) {
+					const base = H * 0.86 - Math.sin(x / 160 + 1) * 24
+					const sway = Math.sin(t * 2 + x / 40) * 6
+					g.beginPath()
+					g.moveTo(x, H)
+					g.quadraticCurveTo(x + sway / 2, base + 20, x + sway, base - 10 - ((x * 7) % 18))
+					g.stroke()
+				}
+				// fireflies
+				for (let i = 0; i < 60; i++) {
+					const x = ((i * 613) % 1000) / 1000 * W + Math.sin(t * 0.8 + i) * 30
+					const y = H * (0.35 + ((i * 371) % 500) / 1000) + Math.cos(t * 1.1 + i * 2) * 20
+					const glow = 0.4 + 0.6 * Math.max(0, Math.sin(t * 3 + i * 1.7))
+					const r = g.createRadialGradient(x, y, 0, x, y, 9)
+					r.addColorStop(0, `rgba(255,250,170,${glow * f})`)
+					r.addColorStop(1, 'rgba(255,240,120,0)')
+					g.fillStyle = r
+					g.fillRect(x - 9, y - 9, 18, 18)
+				}
+				// falling petals
+				for (let i = 0; i < 40; i++) {
+					const x = (((i * 457) % 1000) / 1000) * W + Math.sin(t * 1.5 + i) * 40 + t * 30
+					const y = ((t * (50 + (i % 5) * 15) + i * 71) % (H + 40)) - 20
+					g.save()
+					g.translate(x % W, y)
+					g.rotate(t * 2 + i)
+					g.fillStyle = ['#ffc4d6', '#fff0b3', '#ffd9a8'][i % 3]
+					g.beginPath()
+					g.ellipse(0, 0, 5, 2.5, 0, 0, Math.PI * 2)
+					g.fill()
+					g.restore()
+				}
+			} else if (scene === 'storm') {
+				// clouds roll in, rain slants down, lightning flashes
+				const f = Math.min(1, t / 1.6)
+				g.clearRect(0, 0, W, H)
+				g.fillStyle = `rgba(20,26,38,${0.85 * f})`
+				g.fillRect(0, 0, W, H)
+				const flash = [1.2, 1.35, 2.3].some((ft) => t > ft && t < ft + 0.09)
+				if (flash) {
+					g.fillStyle = 'rgba(230,240,255,0.55)'
+					g.fillRect(0, 0, W, H)
+					g.strokeStyle = 'rgba(255,255,255,0.9)'
+					g.lineWidth = 3
+					g.beginPath()
+					let x = W * (0.3 + 0.4 * ((Math.floor(t * 10) * 37) % 10) / 10)
+					g.moveTo(x, 0)
+					for (let y = 0; y < H * 0.7; y += 40) {
+						x += ((y * 13) % 60) - 30
+						g.lineTo(x, y)
+					}
+					g.stroke()
+				}
+				g.strokeStyle = `rgba(170,190,220,${0.45 * f})`
+				g.lineWidth = 1.2
+				for (let i = 0; i < 220; i++) {
+					const x = ((i * 733) % 1000) / 1000 * (W + 200) - 100 + ((t * 300) % 100)
+					const y = ((t * (700 + (i % 6) * 80) + i * 97) % (H + 60)) - 30
+					g.beginPath()
+					g.moveTo(x, y)
+					g.lineTo(x - 8, y + 22)
+					g.stroke()
+				}
+				// clouds
+				for (let i = 0; i < 9; i++) {
+					const cxl = ((i * 211) % W) + Math.sin(t * 0.4 + i) * 30
+					const cl = g.createRadialGradient(cxl, 30, 0, cxl, 30, 220)
+					cl.addColorStop(0, `rgba(50,56,70,${0.9 * f})`)
+					cl.addColorStop(1, 'rgba(50,56,70,0)')
+					g.fillStyle = cl
+					g.fillRect(cxl - 220, -190, 440, 440)
+				}
 			} else if (scene === 'shadow') {
 				// darkness creeps in from the edges, embers rise, a red glow beneath it all
 				const f = Math.min(1, t / 2.6)
@@ -335,7 +446,13 @@ export function Finale({ s, me, perspective, animate, onMenu }: { s: GameState; 
 	const foeP = s.players[foe]
 	const casts = (i: number) => s.log.filter((l) => l.startsWith(`${s.players[i].name} casts `)).length
 	const title = outcome === 'win' ? 'Victory' : outcome === 'lose' ? (assimilated ? 'Assimilated' : 'Defeat') : 'Stalemate'
-	const line = middle
+	const line = valley
+		? outcome === 'win'
+			? (BB_WIN[meHero] ?? 'The valley is safe.')
+			: outcome === 'lose'
+				? (BB_LOSE[meFoe] ?? 'Your burrow is overrun.')
+				: 'Both bands head home for supper; nobody wins today.'
+		: middle
 		? outcome === 'win'
 			? (ME_WIN[meHero] ?? 'The battle is won.')
 			: outcome === 'lose'
@@ -361,13 +478,15 @@ export function Finale({ s, me, perspective, animate, onMenu }: { s: GameState; 
 			{animate && scene === 'breach' && !panel && <div className="red-alert">Red alert</div>}
 			{animate && scene === 'dawn' && !panel && <div className="me-banner dawn-text">The day is won</div>}
 			{animate && scene === 'shadow' && !panel && <div className="me-banner shadow-text">Darkness falls</div>}
+			{animate && scene === 'meadow' && !panel && <div className="me-banner meadow-text">The valley celebrates</div>}
+			{animate && scene === 'storm' && !panel && <div className="me-banner storm-text">The storm takes your burrow</div>}
 			{animate && scene === 'borg' && !panel && <div className="borg-text">Assimilating…</div>}
 			{panel && (
-				<div className={`finale-panel ${outcome} ${assimilated ? 'borg' : ''} ${middle ? 'parchment' : ''}`}>
+				<div className={`finale-panel ${outcome} ${assimilated ? 'borg' : ''} ${middle ? 'parchment' : ''} ${valley ? 'valley' : ''}`}>
 					<div className="fp-elbow" />
 					<div className="fp-body">
 						<div className="fp-top">
-							<span>{middle ? `Chronicle of the war, Third Age, year ${2950 + (s.turn % 70)}` : `Captain’s log, stardate ${stardate}`}</span>
+							<span>{valley ? `From the valley’s storybook, season ${1 + (s.turn % 4)}` : middle ? `Chronicle of the war, Third Age, year ${2950 + (s.turn % 70)}` : `Captain’s log, stardate ${stardate}`}</span>
 						</div>
 						<h1>{title}</h1>
 						<p className="fp-line">{line}</p>

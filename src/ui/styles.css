@@ -2989,3 +2989,35 @@ body {
 .finale-panel.parchment .fp-why {
 	color: #5b4a30;
 }
+
+/* Bloomburrow: a storybook page with a green leafy edge */
+.meadow-text {
+	color: #fffbe8;
+	font-family: Georgia, serif;
+	text-shadow: 0 0 24px rgba(255, 220, 120, 0.9), 0 4px 14px rgba(40, 70, 20, 0.6);
+}
+.storm-text {
+	color: #cfe0ff;
+	font-family: Georgia, serif;
+	text-shadow: 0 0 22px rgba(120, 160, 255, 0.8);
+}
+.finale-panel.parchment.valley {
+	--fp: #3f7a2a;
+}
+.finale-panel.parchment.valley.lose {
+	--fp: #35506e;
+}
+.finale-panel.parchment.valley .fp-elbow {
+	background: linear-gradient(#5d9a3c, #2f5a1c);
+}
+.finale-panel.parchment.valley .fp-body {
+	background: linear-gradient(#fbf6e4, #eee3c2);
+}
+.finale-panel.parchment.valley .fp-top,
+.finale-panel.parchment.valley .fp-stats b {
+	color: #2f5a1c;
+}
+.finale-panel.parchment.valley .fp-line {
+	font-family: Georgia, serif;
+	font-style: italic;
+}

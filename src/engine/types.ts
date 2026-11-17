@@ -288,6 +288,10 @@ export interface GameState {
 	extraCombats?: number
 	/** The monarch (draws a card at the beginning of their end step; combat damage to them takes the crown). */
 	monarch?: number
+	/** Players who take an extra turn after this one, in order. */
+	extraTurns?: number[]
+	/** Who takes the next normal turn once the extra turns are done. */
+	afterExtra?: number
 	/** Additional combat phases right after this one (no main phase in between). */
 	extraCombatsNow?: number
 	/** World at War: untap the creatures that attacked when that many of the extra combats begin. */

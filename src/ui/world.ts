@@ -1,8 +1,8 @@
-// Star Trek or Middle-earth: which world a player's deck (and so the sounds and the ending) belongs to.
+// Star Trek, Middle-earth or Bloomburrow: which world a player's deck (and so the sounds and the ending) belongs to.
 import { deckOfPlayer, worldOfName, type StarterDeck } from '../data/decks'
 import type { GameState } from '../engine/types'
 
-export type World = 'trek' | 'me'
+export type World = 'trek' | 'me' | 'bb'
 
 export function playerDeck(s: GameState, p: number): StarterDeck | undefined {
 	const pl = s.players[p]

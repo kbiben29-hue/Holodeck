@@ -22,3 +22,14 @@ test('sounds follow the cards: weapons, explosions, beams, engines', () => {
 	assert.equal(soundFor('Ensign assimilates Kurn.', find)?.key, 'borg')
 	assert.equal(soundFor('Captain loses (life total 0).', find), null, 'the finale has its own sounds')
 })
+
+test('Bloomburrow critters sound like themselves', () => {
+	const cards: Record<string, { name: string; typeLine: string }> = {
+		a: { name: 'Bramble Bird', typeLine: 'Creature — Bird Bard' },
+		b: { name: 'Pond Frog', typeLine: 'Creature — Frog Wizard' },
+	}
+	const find = (n: string) => Object.values(cards).find((c) => c.name === n) as never
+	const w = () => 'bb' as const
+	assert.equal(soundFor('A attacks with Bramble Bird.', find, w)?.key, 'attack')
+	assert.equal(soundFor('B gets a gift: a card.', find, w)?.key, 'gift')
+})

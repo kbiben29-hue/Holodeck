@@ -58,6 +58,8 @@ export type Effect =
 	| { e: 'bounce'; t: number }
 	/** The Lord of the Rings: the Ring tempts you; amass an Army; become the monarch. */
 	| { e: 'tempt' }
+	/** Only if the spell was kicked / its gift was promised (or the opposite). */
+	| { e: 'cond'; when: 'kicked' | 'notKicked'; effects: Effect[] }
 	| { e: 'amass'; n: number; kind: string }
 	| { e: 'monarch' }
 	/** Put a permanent into its owner's library: on top, on the bottom, or the owner chooses. */
@@ -238,6 +240,10 @@ export interface Rules {
 	kicker?: string
 	multikicker?: string
 	squad?: string
+	/** Offspring: the squad copy is a single 1/1. */
+	offspring?: boolean
+	/** Gift: what the opponent gets if you promise it ("if the gift was promised" = kicked). */
+	gift?: 'card' | 'food' | 'tapped fish' | 'fish' | 'extra turn' | 'octopus' | 'tapped octopus'
 	flashback?: string
 	cycling?: { cost: string; basic?: boolean }
 	entersWith?: { kind: string; n: number | 'x' | 'kicked' }
@@ -492,6 +498,14 @@ function addTarget(out: Compiled, spec: TargetSpec): number {
 function compileSentence(s0: string, out: Compiled, defName: string): boolean {
 	let m: RegExpMatchArray | null
 	let s = s0
+	// "If the gift was promised, …" / "If this spell was kicked, …": the rest only happens then
+	if ((m = s.match(/^if (the gift was promised|the gift wasn't promised|this spell was kicked|~ was kicked), (.+)$/i))) {
+		const inner: Compiled = { targets: out.targets, effects: [] }
+		const rest = m[2].charAt(0).toUpperCase() + m[2].slice(1)
+		if (!compileSentence(rest, inner, defName)) return false
+		out.effects.push({ e: 'cond', when: /wasn't/i.test(m[1]) ? 'notKicked' : 'kicked', effects: inner.effects })
+		return true
+	}
 	// Middle-earth keywords
 	if (/^the Ring tempts you$/i.test(s)) {
 		out.effects.push({ e: 'tempt' })
@@ -1032,7 +1046,8 @@ function isKeywordLine(s: string): string[] | null {
 		if (KEYWORDS.includes(p)) out.push(p)
 		else if (/^protection from (white|blue|black|red|green|everything|creatures|artifacts)( and from (white|blue|black|red|green))*$/.test(p)) out.push(p)
 		else if (/^ward (\{.+\}|\d+|—.*)$/.test(p)) out.push('ward')
-		else if (/^(basic landcycling|landcycling|multikicker|squad|suspend)\b/.test(p)) out.push(p.split(/ [{\d]/)[0])
+		else if (/^(basic landcycling|landcycling|multikicker|squad|suspend|offspring)\b/.test(p)) out.push(p.split(/ [{\d]/)[0])
+		else if (/^gift an? (card|food|tapped fish|fish|extra turn|octopus|tapped octopus)$/.test(p)) out.push('gift')
 		else if (/^affinity for \w+$/.test(p)) out.push(p)
 		else if (/^(equip|crew|cycling|kicker|flashback|ninjutsu|landwalk|plainswalk|islandwalk|swampwalk|mountainwalk|forestwalk|toxic \d+|annihilator \d+|afflict \d+|bushido \d+|rampage \d+|bloodthirst \d+|modular \d+)\b/.test(p)) out.push(p.split(' ')[0])
 		else if (/^affinity for artifacts$/.test(p)) out.push('affinity for artifacts')
@@ -1159,6 +1174,13 @@ export function parse(def: { name: string; oracle: string; typeLine: string }): 
 			r.kicker = costOf(/^Kicker ((?:\{[^}]+\})+)/) ?? r.kicker
 			r.multikicker = costOf(/^Multikicker ((?:\{[^}]+\})+)/) ?? r.multikicker
 			r.squad = costOf(/^Squad ((?:\{[^}]+\})+)/) ?? r.squad
+			// Bloomburrow: offspring (one 1/1 copy) and gift (promise the opponent something for a bonus)
+			const off = costOf(/^Offspring ((?:\{[^}]+\})+)/)
+			if (off) {
+				r.squad = off
+				r.offspring = true
+			}
+			if ((km = plain.match(/^Gift an? (card|Food|tapped Fish|Fish|extra turn|Octopus|tapped Octopus)/i))) r.gift = km[1].toLowerCase() as Rules['gift']
 			r.flashback = costOf(/^Flashback ((?:\{[^}]+\})+)/) ?? r.flashback
 			if ((km = plain.match(/^(Basic landcycling|Cycling) ((?:\{[^}]+\})+)/))) r.cycling = { cost: km[2], basic: km[1] !== 'Cycling' }
 			const eq = plain.match(/^Equip (\{[^}]+\}(?:\{[^}]+\})*|\d+)/i)
@@ -1292,9 +1314,9 @@ export function parse(def: { name: string; oracle: string; typeLine: string }): 
 				return
 			}
 			let kicked = false
-			if (/^if it was kicked, /.test(effectText)) {
+			if (/^if (it was kicked|the gift was promised), /.test(effectText)) {
 				kicked = true
-				effectText = effectText.replace(/^if it was kicked, /, '')
+				effectText = effectText.replace(/^if (it was kicked|the gift was promised), /, '')
 			}
 			let who: Trigger['who']
 			if ((fm = cond.match(/^~ or another (.+?) you control enters$/))) {

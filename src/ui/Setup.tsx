@@ -25,6 +25,7 @@ const NAME_KEY = 'holodeck.name'
 const WORLDS = [
 	{ id: 'trek', label: 'Star Trek' },
 	{ id: 'me', label: 'The Lord of the Rings' },
+	{ id: 'bb', label: 'Bloomburrow' },
 ] as const
 
 export function Setup({ pool, loading, onReload, onStart, joinCode, resume, initialLessons }: { pool: CardPool | null; loading: { f: number; text: string; error?: string } | null; onReload: () => void; onStart: (r: SetupResult) => void; joinCode: string | null; resume?: { label: string; go: () => void }; initialLessons?: boolean }) {
@@ -173,7 +174,7 @@ export function Setup({ pool, loading, onReload, onStart, joinCode, resume, init
 			<div className="lcars-head">
 				<span className="elbow" />
 				<h1>{APP_NAME}</h1>
-				<span className="sub">STAR TREK & MIDDLE-EARTH · COMMANDER · TWO PLAYERS</span>
+				<span className="sub">STAR TREK · MIDDLE-EARTH · BLOOMBURROW · COMMANDER · TWO PLAYERS</span>
 			</div>
 			<div className="setup-body">
 				<div className="carddata">

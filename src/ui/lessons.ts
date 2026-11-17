@@ -9,10 +9,10 @@ import { findPerm, isCreature } from '../engine/state'
 import type { CardDef, Format, GameState } from '../engine/types'
 import type { CoachStep, Hint } from './coach'
 
-export type DeckId = 'federation' | 'landing' | 'klingon' | 'borg' | 'rohan' | 'fellowship' | 'elven' | 'mordor'
+export type DeckId = 'federation' | 'landing' | 'klingon' | 'borg' | 'rohan' | 'fellowship' | 'elven' | 'mordor' | 'animated' | 'family' | 'peace' | 'squirrel'
 export const deckName = (id: string) => DECKS.find((d) => d.id === id)?.name ?? id
 /** The opponent deck used in a deck's coached game and drills. */
-export const rivalDeck = (id: DeckId): DeckId => ({ federation: 'klingon', klingon: 'federation', borg: 'landing', landing: 'borg', rohan: 'mordor', mordor: 'rohan', fellowship: 'elven', elven: 'fellowship' })[id] as DeckId
+export const rivalDeck = (id: DeckId): DeckId => ({ federation: 'klingon', klingon: 'federation', borg: 'landing', landing: 'borg', rohan: 'mordor', mordor: 'rohan', fellowship: 'elven', elven: 'fellowship', animated: 'squirrel', squirrel: 'animated', family: 'peace', peace: 'family' })[id] as DeckId
 
 // ───────── game plans ─────────
 
@@ -151,6 +151,62 @@ export const PLANS: Record<DeckId, { title: string; body: string }[]> = {
 		{
 			title: 'Raise the dead, burn the rest',
 			body: 'Living Death and Reanimate bring your biggest creatures back; Inferno Titan, Cavern-Hoard Dragon and Knollspine Dragon do the heavy lifting. Blasphemous Act and Languish clear the board when you need room, and Hostage Taker takes the best thing the opponent has.',
+		},
+	],
+	animated: [
+		{
+			title: 'Animated Army — the game plan',
+			body: 'Red-Green, led by Bello, Bard of the Brambles (or Wildsear, Scouring Maw). Turn your stuff into an army: Bello brings your artifacts and enchantments to life as big creatures, so the deck is full of mana rocks, Talents, Sieges and auras that start fighting once he’s out.',
+		},
+		{
+			title: 'Ramp first, then stomp',
+			body: 'Cultivate, Farseek, Rampant Growth, Sakura-Tribe Elder, Lotus Cobra and a pile of mana rocks get you to big plays early: Ghalta, Goreclaw, Etali and Grothama. Garruk’s Uprising and Garruk’s Packleader reward you for landing big creatures with cards and trample.',
+		},
+		{
+			title: 'Protect the bard',
+			body: 'Bello is the engine. Keep a removal answer in hand (Abrade, Chaos Warp, Beast Within, Decimate) for whatever threatens him, and remember Blasphemous Act hurts your animated rocks too.',
+		},
+	],
+	family: [
+		{
+			title: 'Family Matters — the game plan',
+			body: 'White-Blue-Red, led by Zinnia, Valley’s Voice (or Arthur, Marigold Knight). A big family of small creatures: tokens and creatures with low power everywhere, made even better by offspring copies and helpers that make more bodies.',
+		},
+		{
+			title: 'Go wide',
+			body: 'Siege-Gang Commander, Elspeth, Sun’s Champion, Martial Coup, Murmuration and Thopter Engineer fill the board; Jazal Goldmane, Echoing Assault and Storm of Souls turn the crowd into damage. Offspring cards make a 1/1 copy when you pay a little extra.',
+		},
+		{
+			title: 'Flicker and protect',
+			body: 'Restoration Angel, Cloudblazer, Aether Channeler and Skyclave Apparition reuse enters-the-battlefield value or answer threats; Selfless Spirit and Time Wipe save the family from a sweeper.',
+		},
+	],
+	peace: [
+		{
+			title: 'Peace Offering — the game plan',
+			body: 'Green-White-Blue, led by Ms. Bumbleflower (or Mr. Foxglove). Make friends, then win: you hand the opponent small gifts and shared bonuses, and every one you give makes your own side stronger, until big creatures and card advantage take over.',
+		},
+		{
+			title: 'Gifts',
+			body: 'Many Bloomburrow cards let you promise a gift as you cast them: the opponent gets a card, a Food, a Fish or an extra turn, and you get the spell’s bonus. In a duel the gift helps your only opponent, so give when the bonus is clearly worth more than what they get.',
+		},
+		{
+			title: 'Turning their cards into yours',
+			body: 'Hydras like Kalonian Hydra and Managorger Hydra grow fast; Psychosis Crawler, Sphinx of Enlightenment and Triskaidekaphile turn drawing into damage and wins. Swords to Plowshares, Generous Gift and Promise of Loyalty handle threats.',
+		},
+	],
+	squirrel: [
+		{
+			title: 'Squirreled Away — the game plan',
+			body: 'Black-Green, led by Hazel of the Rootbloom (or The Odd Acorn Gang). Hoard tokens — squirrels, Food and Treasure — and cash them in: sacrifice for value, bring things back from the graveyard, and drain the opponent with every death.',
+		},
+		{
+			title: 'Squirrels and sacrifice',
+			body: 'Chatterfang, Scurry of Squirrels, Squirrel Nest, Chatterstorm and Deep Forest Hermit make an army of squirrels. Zulaport Cutthroat, Bastion of Remembrance and Moldervine Reclamation reward every creature that dies; Skullclamp turns your tokens into cards.',
+		},
+		{
+			title: 'The forage engine',
+			body: 'Forage means exiling three cards from your graveyard or sacrificing a Food, so Food matters here: Gilded Goose, Tireless Provisioner and Prosperous Innkeeper keep the larder full. Casualties of War, Maelstrom Pulse and Putrefy clear the way.',
 		},
 	],
 }
