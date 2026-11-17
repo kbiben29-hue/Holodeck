@@ -56,6 +56,10 @@ export type Effect =
 	| { e: 'destroy'; t: number }
 	| { e: 'exile'; t: number }
 	| { e: 'bounce'; t: number }
+	/** The Lord of the Rings: the Ring tempts you; amass an Army; become the monarch. */
+	| { e: 'tempt' }
+	| { e: 'amass'; n: number; kind: string }
+	| { e: 'monarch' }
 	/** Put a permanent into its owner's library: on top, on the bottom, or the owner chooses. */
 	| { e: 'tuck'; t: number; where: 'top' | 'bottom' | 'either' }
 	| { e: 'tap'; t: number; untap?: boolean }
@@ -176,7 +180,7 @@ export interface Activated {
 	loyalty?: boolean
 }
 
-export type TriggerEvent = 'etb' | 'attacks' | 'dies' | 'upkeep' | 'endStep' | 'beginCombat' | 'combatDamagePlayer' | 'landfall' | 'otherEtb' | 'ltb' | 'cast' | 'blocks' | 'secondDraw' | 'youAttack' | 'castSpell' | 'otherDies' | 'gainLife' | 'tapped' | 'teamDamage' | 'eachUpkeep' | 'eachEndStep' | 'yourDraw' | 'eachDraw' | 'commanderEtb' | 'commanderAttacks' | 'goadedAttack'
+export type TriggerEvent = 'etb' | 'attacks' | 'dies' | 'upkeep' | 'endStep' | 'beginCombat' | 'combatDamagePlayer' | 'landfall' | 'otherEtb' | 'ltb' | 'cast' | 'blocks' | 'secondDraw' | 'youAttack' | 'castSpell' | 'otherDies' | 'gainLife' | 'tapped' | 'teamDamage' | 'eachUpkeep' | 'eachEndStep' | 'yourDraw' | 'eachDraw' | 'commanderEtb' | 'commanderAttacks' | 'goadedAttack' | 'ringTempts'
 
 export interface Trigger {
 	threshold?: number
@@ -278,7 +282,9 @@ function normalise(def: { name: string; oracle: string }): string {
 	}
 	if (def.name.includes(' // ')) names.push(...def.name.split(' // '))
 	names.sort((a, b) => b.length - a.length)
-	for (const n of names) if (n.length > 1) t = t.split(n).join(SELF)
+	// whole words only ("Orc" in a card's name mustn't eat the "Orc" in "Orcs")
+	const esc = (x: string) => x.replace(/[.*+?^${}()|[\]\\]/g, '\\$&')
+	for (const n of names) if (n.length > 1) t = t.replace(new RegExp(`(?<![\\p{L}\\p{N}])${esc(n)}(?![\\p{L}\\p{N}])`, 'gu'), SELF)
 	t = t.replace(/\b[Tt]his (creature|artifact|land|enchantment|spell|card|equipment|Equipment|Vehicle|vehicle|permanent|Spacecraft|token|Aura|aura|planeswalker|Planet|planet|battle)\b/g, SELF)
 	t = t.replace(/−/g, '-')
 	// Two-player game: "the number of opponents you attacked this turn" / "you have" is 1.
@@ -486,6 +492,19 @@ function addTarget(out: Compiled, spec: TargetSpec): number {
 function compileSentence(s0: string, out: Compiled, defName: string): boolean {
 	let m: RegExpMatchArray | null
 	let s = s0
+	// Middle-earth keywords
+	if (/^the Ring tempts you$/i.test(s)) {
+		out.effects.push({ e: 'tempt' })
+		return true
+	}
+	if ((m = s.match(/^amass (\w+) (\d+)$/i))) {
+		out.effects.push({ e: 'amass', n: Number(m[2]), kind: m[1] })
+		return true
+	}
+	if (/^you become the monarch$/i.test(s)) {
+		out.effects.push({ e: 'monarch' })
+		return true
+	}
 	// counted amounts become X
 	const counts: [RegExp, Count][] = [
 		[/ for each attacking creature$/, 'attackers'],
@@ -1296,6 +1315,7 @@ export function parse(def: { name: string; oracle: string; typeLine: string }): 
 			else if (/^the beginning of your draw step$/.test(cond)) event = 'yourDraw'
 			else if (/^the beginning of each player's draw step$/.test(cond)) event = 'eachDraw'
 			else if (/^you draw your second card each turn$/.test(cond)) event = 'secondDraw'
+			else if (/^the Ring tempts you$/i.test(cond)) event = 'ringTempts'
 			else if ((fm = cond.match(/^(you|an opponent) casts? (?:a|an) ?(.*?) ?spell$/))) {
 				const ff = parseFilter(fm[2] || 'card')
 				if (ff) {

@@ -1,8 +1,13 @@
-// The four Magic: The Gathering | Star Trek Commander decks (official decklists, Nov 2026).
+// The Commander decks: the four Magic: The Gathering | Star Trek decks (official decklists, Nov 2026) and the four
+// The Lord of the Rings: Tales of Middle-earth decks (official decklists, June 2023).
 // Names only; card details and images are loaded from Scryfall on the player's device.
 
 export interface StarterDeck {
 	id: string
+	/** Which game the deck comes from: Star Trek (default) or The Lord of the Rings (Middle-earth). */
+	world?: 'trek' | 'me'
+	/** The two legends are partners ("Partner with"): they can lead the deck together. */
+	partners?: boolean
 	name: string
 	colors: string
 	commander: string
@@ -403,6 +408,363 @@ Path of Ancestry
 Rogue's Passage
 Terramorphic Expanse`),
 	},
+	{
+		id: 'rohan',
+		world: 'me',
+		name: 'Riders of Rohan',
+		colors: 'WUR',
+		commander: 'Éowyn, Shieldmaiden',
+		alt: 'Aragorn, King of Gondor',
+		basics: [['Plains', 9], ['Island', 5], ['Mountain', 5]],
+		cards: split(`
+Aragorn, King of Gondor
+Beregond of the Guard
+Champions of Minas Tirith
+Gilraen, Dúnedain Protector
+Grey Host Reinforcements
+Lossarnach Captain
+Archivist of Gondor
+Denethor, Stone Seer
+Fealty to the Realm
+Call for Aid
+Gimli of the Glittering Caves
+Boromir, Gondor's Hope
+Éomer, King of Rohan
+Faramir, Steward of Gondor
+Forth Eorlingas!
+Oath of Eorl
+Riders of Rohan
+Taunt from the Rampart
+Crown of Gondor
+Bastion Protector
+Dearly Departed
+Frontline Medic
+Increasing Devotion
+Marshal's Anthem
+Selfless Squire
+Unbreakable Formation
+Verge Rangers
+Visions of Glory
+Weathered Wayfarer
+Combat Celebrant
+Court of Ire
+Earthquake
+Flamerush Rider
+Frontier Warmonger
+Harsh Mentor
+Shared Animosity
+Zealous Conscripts
+Supreme Verdict
+Door of Destinies
+Vanquisher's Banner
+Battlefield Forge
+Clifftop Retreat
+Exotic Orchard
+Furycalm Snarl
+Glacial Fortress
+Port Town
+Prairie Stream
+Sulfur Falls
+Throne of the High City
+Windbrisk Heights
+Lost to Legend
+Erkenbrand, Lord of Westfold
+Banishing Light
+Fiend Hunter
+Palace Jailer
+Path to Exile
+Sunset Revelry
+Swords to Plowshares
+Village Bell-Ringer
+Prince Imrahil the Fair
+Humble Defector
+Théoden, King of Rohan
+Arcane Signet
+Commander's Sphere
+Heirloom Blade
+Herald's Horn
+Sol Ring
+Talisman of Conviction
+Talisman of Progress
+Thought Vessel
+Wayfarer's Bauble
+Command Tower
+Evolving Wilds
+Field of Ruin
+Path of Ancestry
+Rogue's Passage
+Secluded Courtyard
+Terramorphic Expanse
+Tranquil Cove
+Wind-Scarred Crag`),
+	},
+	{
+		id: 'fellowship',
+		world: 'me',
+		name: 'Food and Fellowship',
+		colors: 'WBG',
+		commander: 'Frodo, Adventurous Hobbit',
+		alt: 'Sam, Loyal Attendant',
+		partners: true,
+		basics: [['Plains', 4], ['Swamp', 4], ['Forest', 8]],
+		cards: split(`
+Sam, Loyal Attendant
+Field-Tested Frying Pan
+The Gaffer
+Gwaihir, Greatest of the Eagles
+Of Herbs and Stewed Rabbit
+Gollum, Obsessed Stalker
+Lobelia, Defender of Bag End
+Rapacious Guest
+Assemble the Entmoot
+Feasting Hobbit
+Motivated Pony
+Prize Pig
+Banquet Guests
+Bilbo, Birthday Celebrant
+Farmer Cotton
+Merry, Warden of Isengard
+Pippin, Warden of Isengard
+Treebeard, Gracious Host
+Hithlain Rope
+Call for Unity
+Dawn of Hope
+Dusk
+Fell the Mighty
+Fumigate
+Mentor of the Meek
+Sanguine Bond
+Toxic Deluge
+Birds of Paradise
+Gilded Goose
+Woodfall Primus
+Anguished Unmaking
+Chromatic Lantern
+Trading Post
+Well of Lost Dreams
+Brushland
+Canopy Vista
+Exotic Orchard
+Fortified Village
+Isolated Chapel
+Murmuring Bosk
+Necroblossom Snarl
+Scattered Groves
+Shineshadow Snarl
+Sunpetal Grove
+Woodland Cemetery
+Eagles of the North
+Landroval, Horizon Witness
+Rosie Cotton of South Lane
+Shire Shirriff
+Mirkwood Bats
+Generous Ent
+Path to Exile
+Swords to Plowshares
+Revive the Shire
+Butterbur, Bree Innkeeper
+Crypt Incursion
+Go for the Throat
+Night's Whisper
+Cultivate
+Essence Warden
+Farseek
+Great Oak Guardian
+Harmonize
+Orchard Strider
+Prosperous Innkeeper
+Shire Terrace
+Tireless Provisioner
+Mortify
+Savvy Hunter
+Arcane Signet
+Commander's Sphere
+Pristine Talisman
+Sol Ring
+Access Tunnel
+Ash Barrens
+Command Tower
+Evolving Wilds
+Ghost Quarter
+Graypelt Refuge
+Path of Ancestry
+Rogue's Passage
+Sandsteppe Citadel
+Scoured Barrens`),
+	},
+	{
+		id: 'elven',
+		world: 'me',
+		name: 'Elven Council',
+		colors: 'GU',
+		commander: 'Galadriel, Elven-Queen',
+		alt: 'Gandalf, Westward Voyager',
+		basics: [['Island', 11], ['Forest', 15]],
+		cards: split(`
+Gandalf, Westward Voyager
+Raise the Palisade
+Trap the Trespassers
+Arwen, Weaver of Hope
+Galadhrim Ambush
+Haldir, Lórien Lieutenant
+Legolas Greenleaf
+Mirkwood Elk
+Travel Through Caradhras
+Windswift Slice
+Círdan the Shipwright
+Elrond of the White Council
+Erestor of the Council
+Mirkwood Trapper
+Radagast, Wizard of Wilds
+Sail into the West
+Song of Eärendil
+Lothlórien Blade
+Model of Unity
+Colossal Whale
+Devastation Tide
+Mystic Confluence
+Plea for Power
+Swan Song
+Asceticism
+Elvish Archdruid
+Elvish Piper
+Elvish Warmaster
+Genesis Wave
+Heroic Intervention
+Hornet Queen
+Inscription of Abundance
+Overwhelming Stampede
+Realm Seekers
+Seeds of Renewal
+Sylvan Offering
+Exotic Orchard
+Flooded Grove
+Hinterland Harbor
+Rejuvenating Springs
+Vineglimmer Snarl
+Lórien Revealed
+Celeborn the Wise
+Elven Farsight
+Wose Pathfinder
+Learn from the Past
+Opt
+Preordain
+Arbor Elf
+Beast Within
+Cultivate
+Elvish Mystic
+Elvish Visionary
+Farhaven Elf
+Mirror of Galadriel
+Lignify
+Paradise Druid
+Rampant Growth
+Reclamation Sage
+Wood Elves
+Growth Spiral
+Arcane Signet
+Commander's Sphere
+Lightning Greaves
+Sol Ring
+Whispersilk Cloak
+Ash Barrens
+Command Tower
+Field of Ruin
+Lonely Sandbar
+Thornwood Falls
+Tranquil Thicket
+Woodland Stream`),
+	},
+	{
+		id: 'mordor',
+		world: 'me',
+		name: 'The Hosts of Mordor',
+		colors: 'UBR',
+		commander: 'Sauron, Lord of the Rings',
+		alt: 'Saruman, the White Hand',
+		basics: [['Island', 6], ['Swamp', 6], ['Mountain', 7]],
+		cards: split(`
+Saruman, the White Hand
+Corsairs of Umbar
+Monstrosity of the Lake
+Subjugate the Hobbits
+Shelob, Dread Weaver
+Cavern-Hoard Dragon
+Orcish Siegemaster
+Rampaging War Mammoth
+The Balrog of Moria
+Gríma, Saruman's Footman
+In the Darkness Bind Them
+Lidless Gaze
+Lord of the Nazgûl
+Moria Scavenger
+Summons of Saruman
+Too Greedily, Too Deep
+Wake the Dragon
+Relic of Sauron
+The Black Gate
+Decree of Pain
+Languish
+Living Death
+Reanimate
+Blasphemous Act
+Goblin Dark-Dwellers
+Inferno Titan
+Knollspine Dragon
+Scourge of the Throne
+Siege-Gang Commander
+Treasure Nabber
+Hostage Taker
+Notion Thief
+Choked Estuary
+Desolate Lighthouse
+Dragonskull Summit
+Drowned Catacomb
+Foreboding Ruins
+Frostboil Snarl
+Smoldering Marsh
+Sulfur Falls
+Sulfurous Springs
+Sunken Hollow
+Underground River
+Treason of Isengard
+Bitter Downfall
+Troll of Khazad-dûm
+Voracious Fell Beast
+Fiery Inscription
+Grishnákh, Brash Instigator
+Arcane Denial
+Boon of the Wish-Giver
+Consider
+Deep Analysis
+Fact or Fiction
+Forbidden Alchemy
+Feed the Swarm
+Merciless Executioner
+Revenge of Ravens
+Anger
+Faithless Looting
+The Mouth of Sauron
+Goblin Cratermaker
+Guttersnipe
+Shiny Impetus
+Thrill of Possibility
+Extract from Darkness
+Arcane Signet
+Basalt Monolith
+Commander's Sphere
+Everflowing Chalice
+Mind Stone
+Sol Ring
+Worn Powerstone
+Command Tower
+Crumbling Necropolis
+Evolving Wilds
+Field of Ruin
+Path of Ancestry
+Rogue's Passage
+Terramorphic Expanse`),
+	},
 ]
 
 /** All card names the decks use (for loading). */
@@ -499,4 +861,39 @@ export function sixtyCards(d: StarterDeck, pool: Record<string, CutInfo | undefi
 	}
 	for (const n of rest) if (picked.length < 60 - SIXTY_LANDS && !picked.includes(n)) take(n)
 	return [...picked, ...lands]
+}
+
+// ───────── which world a card or player belongs to ─────────
+
+let worldIndex: Map<string, 'trek' | 'me' | 'both'> | null = null
+/** 'trek' or 'me' for a card that's only in one world's decks; undefined for shared cards (Sol Ring…) or tokens. */
+export function worldOfName(name: string): 'trek' | 'me' | undefined {
+	if (!worldIndex) {
+		worldIndex = new Map()
+		for (const d of DECKS)
+			for (const n of [d.commander, d.alt, ...d.cards]) {
+				const w = d.world ?? 'trek'
+				const was = worldIndex.get(n)
+				worldIndex.set(n, was && was !== w ? 'both' : w)
+			}
+	}
+	const w = worldIndex.get(name)
+	return w === 'both' ? undefined : w
+}
+
+/** The deck a player is playing, recognised from their commanders (or, in a 60-card game, from their cards). */
+export function deckOfPlayer(commanderNames: string[], cardNames: string[]): StarterDeck | undefined {
+	const byCmd = DECKS.find((d) => commanderNames.some((n) => n === d.commander || n === d.alt))
+	if (byCmd) return byCmd
+	let best: StarterDeck | undefined
+	let score = 0
+	for (const d of DECKS) {
+		const set = new Set([d.commander, d.alt, ...d.cards])
+		const n = cardNames.filter((x) => set.has(x)).length
+		if (n > score) {
+			score = n
+			best = d
+		}
+	}
+	return best
 }

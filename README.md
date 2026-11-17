@@ -7,9 +7,11 @@
 Every push to `main` rebuilds all three (`.github/workflows/release.yml`); the links always point at the newest build.
 
 Holodeck is a two-player table for the four **Magic: The Gathering | Star Trek Commander decks**
-(Federation Fleet, Landing Party, Klingon Fury, We Are the Borg). It's a fan project with no official
+(Federation Fleet, Landing Party, Klingon Fury, We Are the Borg) and the four **The Lord of the Rings: Tales of
+Middle-earth Commander decks** (Riders of Rohan, Food and Fellowship, Elven Council, The Hosts of Mordor). It's a fan project with no official
 standing; card text and images are loaded from [Scryfall](https://scryfall.com) on your own device.
 
+- **Sound effects** are public-domain (CC0) recordings from Kenney's packs — see `public/sfx/README.md`. No music.
 - **vs Computer**, **two players on one device**, or **play a friend online** with an invite link.
 - **Formats:** Duel Commander (20 life, no commander damage, the usual 2-player Commander), 1v1 Commander
   (30 life, 21 commander damage) or classic 40 life. The Duel Commander ban list isn't used, so the decks

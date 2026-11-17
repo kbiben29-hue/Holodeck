@@ -9,7 +9,7 @@ import type { CardDef, GameState, Intent } from '../engine/types'
 /** What a player brings: one of the Star Trek decks and which legend leads it. */
 export interface DeckChoice {
 	deck: string
-	leader: 'commander' | 'alt'
+	leader: 'commander' | 'alt' | 'both'
 }
 
 export type GuestMsg = { type: 'hello'; name: string; deck: DeckChoice } | { type: 'intent'; intent: Intent }

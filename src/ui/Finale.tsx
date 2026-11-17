@@ -5,6 +5,7 @@
 import { useEffect, useRef, useState } from 'react'
 import type { GameState } from '../engine/types'
 import { sfx } from './sfx'
+import { playerDeck, playerWorld } from './world'
 
 type Faction = 'federation' | 'landing' | 'klingon' | 'borg'
 type Outcome = 'win' | 'lose' | 'draw'
@@ -32,6 +33,18 @@ const WIN_LINE: Record<Faction, string> = {
 	klingon: 'A glorious battle! Songs will be sung of this day.',
 	borg: 'Another vessel has joined the Collective.',
 }
+const ME_WIN: Record<string, string> = {
+	rohan: 'Horns ring across the plain — the riders hold the field.',
+	fellowship: 'The hobbits are safe home, and there is food enough for everyone.',
+	elven: 'The council has spoken, and the woods are at peace once more.',
+	mordor: 'Every land bows before the Dark Lord.',
+}
+const ME_LOSE: Record<string, string> = {
+	rohan: 'The riders charged at first light and swept your host from the field.',
+	fellowship: 'Never underestimate a hobbit with a full larder.',
+	elven: 'Elven arrows and old magic turned the battle against you.',
+	mordor: 'The Shadow spreads across your lands.',
+}
 const LOSE_LINE: Record<Faction, string> = {
 	federation: 'Your ship was outmanoeuvred by a Starfleet crew.',
 	landing: 'The landing party out-thought you, one world at a time.',
@@ -46,10 +59,14 @@ export function Finale({ s, me, perspective, animate, onMenu }: { s: GameState; 
 	const outcome: Outcome = winner === null ? 'draw' : winner === hero ? 'win' : 'lose'
 	const foe = 1 - hero
 	const foeFaction = factionOf(s, foe)
-	const assimilated = outcome === 'lose' && foeFaction === 'borg'
-	const scene = outcome === 'win' ? 'warp' : outcome === 'lose' ? (assimilated ? 'borg' : 'breach') : 'draw'
+	// Middle-earth decks get a Middle-earth ending: the sun rises on a victory, the shadow falls on a defeat
+	const middle = playerWorld(s, hero) === 'me'
+	const meHero = playerDeck(s, hero)?.id ?? ''
+	const meFoe = playerDeck(s, foe)?.id ?? ''
+	const assimilated = !middle && outcome === 'lose' && foeFaction === 'borg'
+	const scene = middle ? (outcome === 'win' ? 'dawn' : outcome === 'lose' ? 'shadow' : 'draw') : outcome === 'win' ? 'warp' : outcome === 'lose' ? (assimilated ? 'borg' : 'breach') : 'draw'
 	// the panel arrives once the show is over
-	const delay = !animate ? 0 : scene === 'warp' ? 2300 : scene === 'breach' ? 3300 : scene === 'borg' ? 2900 : 600
+	const delay = !animate ? 0 : scene === 'warp' ? 2300 : scene === 'breach' ? 3300 : scene === 'borg' ? 2900 : scene === 'dawn' ? 2600 : scene === 'shadow' ? 3000 : 600
 	const [panel, setPanel] = useState(delay === 0)
 	const [hidden, setHidden] = useState(false)
 	const [warp, setWarp] = useState(1)
@@ -57,7 +74,10 @@ export function Finale({ s, me, perspective, animate, onMenu }: { s: GameState; 
 	const root = useRef<HTMLDivElement>(null)
 
 	useEffect(() => {
-		if (outcome === 'win') (animate ? sfx.warp : sfx.win)()
+		if (middle) {
+			if (outcome === 'win') (animate ? sfx.dawn : sfx.win)()
+			else if (outcome === 'lose') (animate ? sfx.shadow : sfx.lose)()
+		} else if (outcome === 'win') (animate ? sfx.warp : sfx.win)()
 		else if (outcome === 'lose') {
 			if (!animate) sfx.lose()
 			else if (assimilated) sfx.assimilated()
@@ -159,6 +179,65 @@ export function Finale({ s, me, perspective, animate, onMenu }: { s: GameState; 
 					g.ellipse(cx, cy, f * W * 0.7, f * H * 0.22, 0, 0, Math.PI * 2)
 					g.stroke()
 				}
+			} else if (scene === 'dawn') {
+				// night lifts and the sun climbs over the hills, rays spreading across the sky
+				const f = Math.min(1, t / 2.2)
+				const sky = g.createLinearGradient(0, 0, 0, H)
+				sky.addColorStop(0, `rgb(${10 + 60 * f},${14 + 70 * f},${40 + 90 * f})`)
+				sky.addColorStop(0.65, `rgb(${30 + 200 * f},${20 + 120 * f},${40 + 40 * f})`)
+				sky.addColorStop(1, `rgb(${40 + 215 * f},${30 + 170 * f},${30 + 60 * f})`)
+				g.fillStyle = sky
+				g.fillRect(0, 0, W, H)
+				const sunY = H * (0.95 - 0.35 * f)
+				g.save()
+				g.translate(cx, sunY)
+				for (let i = 0; i < 18; i++) {
+					g.rotate((Math.PI * 2) / 18)
+					g.fillStyle = `rgba(255,230,160,${0.08 + 0.1 * f})`
+					g.beginPath()
+					g.moveTo(0, 0)
+					g.lineTo(Math.max(W, H) * 1.2, -40)
+					g.lineTo(Math.max(W, H) * 1.2, 40)
+					g.fill()
+				}
+				g.restore()
+				const sun = g.createRadialGradient(cx, sunY, 0, cx, sunY, 120 + 80 * f)
+				sun.addColorStop(0, 'rgba(255,250,220,1)')
+				sun.addColorStop(0.4, 'rgba(255,214,120,0.9)')
+				sun.addColorStop(1, 'rgba(255,160,60,0)')
+				g.fillStyle = sun
+				g.fillRect(0, 0, W, H)
+				// rolling hills in silhouette
+				for (let layer = 0; layer < 3; layer++) {
+					g.fillStyle = ['#1d2a14', '#14200e', '#0b1408'][layer]
+					g.beginPath()
+					g.moveTo(0, H)
+					for (let x = 0; x <= W; x += 20) g.lineTo(x, H * (0.78 + layer * 0.07) - Math.sin(x / (160 - layer * 30) + layer) * (30 - layer * 6))
+					g.lineTo(W, H)
+					g.fill()
+				}
+			} else if (scene === 'shadow') {
+				// darkness creeps in from the edges, embers rise, a red glow beneath it all
+				const f = Math.min(1, t / 2.6)
+				g.clearRect(0, 0, W, H)
+				const glow = g.createRadialGradient(cx, H * 1.1, 0, cx, H * 1.1, H * (0.4 + 0.5 * f))
+				glow.addColorStop(0, `rgba(255,70,10,${0.55 * f})`)
+				glow.addColorStop(1, 'rgba(120,0,0,0)')
+				g.fillStyle = glow
+				g.fillRect(0, 0, W, H)
+				const dark = g.createRadialGradient(cx, cy, Math.max(W, H) * (0.7 - 0.6 * f), cx, cy, Math.max(W, H) * (0.9 - 0.3 * f))
+				dark.addColorStop(0, 'rgba(0,0,0,0)')
+				dark.addColorStop(1, `rgba(0,0,0,${0.95})`)
+				g.fillStyle = dark
+				g.fillRect(0, 0, W, H)
+				g.fillStyle = `rgba(0,0,0,${0.5 * f})`
+				g.fillRect(0, 0, W, H)
+				for (let i = 0; i < 90; i++) {
+					const x = ((i * 977) % 1000) / 1000 * W + Math.sin(t * 1.3 + i) * 20
+					const y = H - (((t * (40 + (i % 7) * 18) + i * 53) % (H + 40)))
+					g.fillStyle = `rgba(255,${120 + (i % 5) * 20},40,${0.35 + 0.4 * ((i % 3) / 2)})`
+					g.fillRect(x, y, 2 + (i % 2), 2 + (i % 2))
+				}
 			} else if (scene === 'breach') {
 				g.clearRect(0, 0, W, H)
 				const tb = t - 1.85 // the moment of the breach
@@ -256,7 +335,17 @@ export function Finale({ s, me, perspective, animate, onMenu }: { s: GameState; 
 	const foeP = s.players[foe]
 	const casts = (i: number) => s.log.filter((l) => l.startsWith(`${s.players[i].name} casts `)).length
 	const title = outcome === 'win' ? 'Victory' : outcome === 'lose' ? (assimilated ? 'Assimilated' : 'Defeat') : 'Stalemate'
-	const line = outcome === 'win' ? WIN_LINE[factionOf(s, hero)] : outcome === 'lose' ? LOSE_LINE[foeFaction] : 'Both ships are disabled. Neither side can claim the sector.'
+	const line = middle
+		? outcome === 'win'
+			? (ME_WIN[meHero] ?? 'The battle is won.')
+			: outcome === 'lose'
+				? (ME_LOSE[meFoe] ?? 'Your host is scattered.')
+				: 'Both hosts withdraw; neither can claim the field.'
+		: outcome === 'win'
+			? WIN_LINE[factionOf(s, hero)]
+			: outcome === 'lose'
+				? LOSE_LINE[foeFaction]
+				: 'Both ships are disabled. Neither side can claim the sector.'
 	const why = s.players.filter((x) => x.lost).map((x) => `${x.name}: ${x.lost}`).join(' · ')
 	const stardate = `${41000 + ((s.rng >>> 0) % 9000)}.${s.turn % 10}`
 
@@ -270,13 +359,15 @@ export function Finale({ s, me, perspective, animate, onMenu }: { s: GameState; 
 				</div>
 			)}
 			{animate && scene === 'breach' && !panel && <div className="red-alert">Red alert</div>}
+			{animate && scene === 'dawn' && !panel && <div className="me-banner dawn-text">The day is won</div>}
+			{animate && scene === 'shadow' && !panel && <div className="me-banner shadow-text">Darkness falls</div>}
 			{animate && scene === 'borg' && !panel && <div className="borg-text">Assimilating…</div>}
 			{panel && (
-				<div className={`finale-panel ${outcome} ${assimilated ? 'borg' : ''}`}>
+				<div className={`finale-panel ${outcome} ${assimilated ? 'borg' : ''} ${middle ? 'parchment' : ''}`}>
 					<div className="fp-elbow" />
 					<div className="fp-body">
 						<div className="fp-top">
-							<span>Captain’s log, stardate {stardate}</span>
+							<span>{middle ? `Chronicle of the war, Third Age, year ${2950 + (s.turn % 70)}` : `Captain’s log, stardate ${stardate}`}</span>
 						</div>
 						<h1>{title}</h1>
 						<p className="fp-line">{line}</p>

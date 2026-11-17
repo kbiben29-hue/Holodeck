@@ -330,7 +330,7 @@ export default function App() {
 					p.cards,
 					[
 						{ name: lb.name, deck: lb.deck.deck, leader: lb.deck.leader },
-						{ name: (m.name || 'Player 2').slice(0, 24), deck: m.deck?.deck ?? 'klingon', leader: m.deck?.leader === 'alt' ? 'alt' : 'commander' },
+						{ name: (m.name || 'Player 2').slice(0, 24), deck: m.deck?.deck ?? 'klingon', leader: m.deck?.leader === 'alt' || m.deck?.leader === 'both' ? m.deck.leader : 'commander' },
 					],
 					lb.format,
 					seed,

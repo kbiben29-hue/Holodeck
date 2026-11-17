@@ -9,8 +9,8 @@ import type { CardDef } from '../src/engine/types'
 export function realSim(cards: Record<string, CardDef>, n: number) {
 	const out: { game: number; decks: string; turns: number; result: string; error?: string }[] = []
 	for (let g = 0; g < n; g++) {
-		const a = DECKS[g % 4].id
-		const b = DECKS[(g + 1 + Math.floor(g / 4)) % 4].id
+		const a = DECKS[g % DECKS.length].id
+		const b = DECKS[(g + 1 + Math.floor(g / DECKS.length)) % DECKS.length].id
 		let s = buildGame(cards, [{ name: 'A', deck: a, leader: 'commander', bot: true }, { name: 'B', deck: b, leader: g % 2 ? 'alt' : 'commander', bot: true }], (['duel', 'oneVsOne', 'classic'] as const)[g % 3], 1000 + g)
 		let error: string | undefined
 		try {
@@ -37,8 +37,8 @@ export function realSim(cards: Record<string, CardDef>, n: number) {
 ;(globalThis as unknown as { HoloSim: unknown }).HoloSim = { realSim, coverage }
 
 export function trace(cards: Record<string, CardDef>, g: number, steps: number) {
-	const a = DECKS[g % 4].id
-	const b = DECKS[(g + 1 + Math.floor(g / 4)) % 4].id
+	const a = DECKS[g % DECKS.length].id
+	const b = DECKS[(g + 1 + Math.floor(g / DECKS.length)) % DECKS.length].id
 	let s = buildGame(cards, [{ name: 'A', deck: a, leader: 'commander', bot: true }, { name: 'B', deck: b, leader: g % 2 ? 'alt' : 'commander', bot: true }], 'duel', 1000 + g)
 	const pend: string[] = []
 	for (let i = 0; i < steps && s.pending.kind !== 'over'; i++) {

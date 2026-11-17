@@ -47,7 +47,11 @@ export function unlockAudio() {
 
 // ───────── recorded effects: Kenney's "Sci-Fi Sounds" (CC0, public domain), in public/sfx ─────────
 
-const SAMPLES = ['phaser1', 'phaser2', 'phaser3', 'disruptor1', 'disruptor2', 'disruptor3', 'borg1', 'borg2', 'torpedo', 'boom1', 'boom2', 'boom3', 'bigboom', 'bigboom2', 'beam1', 'beam2', 'beam3', 'shield', 'computer1', 'computer2', 'door_open', 'door_close', 'engine', 'charge', 'warp', 'clang1', 'clang2', 'assimilate'] as const
+const SAMPLES = ['phaser1', 'phaser2', 'phaser3', 'disruptor1', 'disruptor2', 'disruptor3', 'borg1', 'borg2', 'torpedo', 'boom1', 'boom2', 'boom3', 'bigboom', 'bigboom2', 'beam1', 'beam2', 'beam3', 'shield', 'computer1', 'computer2', 'door_open', 'door_close', 'engine', 'charge', 'warp', 'clang1', 'clang2', 'assimilate',
+	// table sounds (Kenney Casino + Interface, CC0)
+	'place1', 'place2', 'place3', 'place4', 'slide1', 'slide2', 'slide3', 'shuffle', 'click',
+	// Middle-earth (Kenney RPG + Impact, CC0)
+	'sword_draw1', 'sword_draw2', 'slash1', 'slash2', 'chop', 'clash1', 'clash2', 'shieldhit', 'punch', 'wood', 'bell', 'hoof1', 'hoof2', 'coins', 'page', 'creak', 'cloth', 'latch'] as const
 type Sample = (typeof SAMPLES)[number]
 const buffers = new Map<string, AudioBuffer>()
 let loadStarted = false
@@ -228,34 +232,106 @@ export const sfx = {
 		for (let i = 0; i < 9; i++) noise(0.05, { band: 2000 + (i % 3) * 1800, q: 10, vol: 0.14, at: 0.3 + i * 0.21 })
 		tone(220, 1.2, { type: 'sine', at: 1.4, vol: 0.07, to: 110 })
 	},
+	/** Middle-earth victory: a war horn, a bell and a rising chord as the sun comes up. */
+	dawn() {
+		sfx.horn()
+		sample('bell', { at: 0.9, vol: 0.5 })
+		;[392, 494, 587, 784].forEach((f, i) => tone(f, 1.2, { type: 'triangle', at: 1.4 + i * 0.16, vol: 0.06, filter: 2400 }))
+		tone(784, 1.6, { type: 'sine', at: 2.2, vol: 0.05, to: 1046 })
+	},
+	/** Middle-earth defeat: war drums, a growl from the dark and a falling chord. */
+	shadow() {
+		for (let i = 0; i < 4; i++) if (!sample('punch', { at: i * 0.5, vol: 0.7, rate: 0.55 })) tone(60, 0.3, { type: 'sine', at: i * 0.5, vol: 0.2 })
+		sfx.growl()
+		sample('bigboom', { at: 2, vol: 0.6, rate: 0.7 })
+		;[294, 247, 208, 165].forEach((f, i) => tone(f, 0.9, { type: 'sawtooth', at: 2 + i * 0.25, vol: 0.06, filter: 900 }))
+	},
+	/** An arrow leaving the bow: a quick airy whoosh and a thunk. */
+	arrow() {
+		noise(0.22, { band: 1800, sweepTo: 5200, vol: 0.22, q: 1.6 })
+		if (!sample('wood', { at: 0.2, vol: 0.5, rate: 1.4 })) tone(180, 0.08, { type: 'square', at: 0.2, vol: 0.1, filter: 900 })
+	},
+	/** Spellcraft: a rising shimmer of bell tones. */
+	magic() {
+		;[880, 1175, 1568, 2093].forEach((f, i) => tone(f, 0.55, { type: 'sine', at: i * 0.05, vol: 0.06, to: f * 1.5 }))
+		noise(0.5, { band: 6000, sweepTo: 9000, vol: 0.06, q: 3 })
+	},
+	/** A war horn: a low brass swell. */
+	horn() {
+		tone(146, 1.1, { type: 'sawtooth', vol: 0.12, filter: 700, q: 2, to: 155 })
+		tone(220, 1.0, { type: 'sawtooth', at: 0.05, vol: 0.07, filter: 900, q: 2 })
+	},
+	/** An orc's snarl. */
+	growl() {
+		tone(70, 0.45, { type: 'sawtooth', vol: 0.18, filter: 380, q: 8, to: 55 })
+		noise(0.4, { band: 300, vol: 0.18, q: 2 })
+	},
+	/** A dragon's (or a Balrog's) fire. */
+	fire() {
+		if (!sample('torpedo', { vol: 0.8, rate: 0.6 })) noise(0.8, { band: 500, sweepTo: 150, vol: 0.3 })
+		sample('bigboom2', { at: 0.15, vol: 0.5, rate: 1.3 })
+	},
+	/** A soft healing chime. */
+	chime() {
+		tone(1318, 0.5, { type: 'sine', vol: 0.06 })
+		tone(1760, 0.6, { type: 'sine', at: 0.08, vol: 0.05 })
+	},
+	/** The Ring's pull: a deep bell over a low drone. */
+	ring() {
+		if (!sample('bell', { vol: 0.55, rate: 0.6 })) tone(220, 1.4, { type: 'sine', vol: 0.08 })
+		tone(55, 1.6, { type: 'sawtooth', vol: 0.08, filter: 300, q: 4 })
+	},
+	/** A card set down on the table: a soft, pleasant tap. */
+	place() {
+		if (!sample(['place1', 'place2', 'place3', 'place4'], { vol: 0.55 })) tone(1200, 0.04, { type: 'triangle', vol: 0.05, filter: 3000 })
+	},
+	/** A card drawn: a quick slide. */
+	slide() {
+		if (!sample(['slide1', 'slide2', 'slide3'], { vol: 0.45 })) sfx.draw()
+	},
 	error() {
 		tone(140, 0.15, { type: 'square', vol: 0.1, filter: 900 })
 	},
 }
 
 
+
 // ───────── what each moment of the game sounds like ─────────
 
 type Card = { name: string; typeLine: string; oracle: string }
 type Lookup = (name: string) => Card | undefined
+/** Star Trek or Middle-earth: which world a card (by name) belongs to. */
+export type World = 'trek' | 'me'
 
-/** Ship weapons for Spacecraft, cutting beams for the Borg, disruptors for Klingons, sidearms for everyone else;
- * spells and abilities that aren't creatures fire torpedoes. */
-function weapon(src: Card | undefined, big: boolean) {
+/** Star Trek: ship weapons for Spacecraft, cutting beams for the Borg, disruptors for Klingons, sidearms for everyone
+ * else; spells and abilities that aren't creatures fire torpedoes. */
+function trekWeapon(src: Card | undefined, big: boolean) {
 	const t = src?.typeLine ?? ''
 	if (/Spacecraft/.test(t)) return () => (sample(big ? 'phaser1' : ['phaser2', 'phaser3']) || sfx.attack())
 	if (/Borg/.test(t)) return () => (sample(['borg1', 'borg2']) || sfx.steal())
 	if (/Klingon|Warrior/.test(t)) return () => (sample(['disruptor1', 'disruptor2', 'disruptor3']) || sfx.steal())
 	if (/Creature/.test(t)) return () => (sample(['disruptor2', 'phaser3'], { rate: 1.15 }) || sfx.steal())
-	// a spell, an artifact, an enchantment: photon torpedo — launch, then the hit
 	return () => {
 		if (!sample('torpedo', { vol: 0.7, rate: 1.3 })) return sfx.steal()
 		sample(['boom1', 'boom3'], { at: 0.32, vol: 0.55, rate: 1.2 })
 	}
 }
 
-/** Pick a sound for a new log line (with the card pool, to know what kind of card did it). */
-export function soundFor(line: string, find: Lookup = () => undefined): { key: string; play: () => void } | null {
+/** Middle-earth: dragons breathe fire, elves and archers shoot, riders charge, orcs and trolls bludgeon,
+ * everyone else crosses swords; spells are spellcraft. */
+function meWeapon(src: Card | undefined) {
+	const t = src?.typeLine ?? ''
+	const o = src?.oracle ?? ''
+	if (/Dragon|Balrog|Demon|Avatar/.test(t)) return () => sfx.fire()
+	if (/Elf|Archer/.test(t) || /\bReach\b/.test(o)) return () => sfx.arrow()
+	if (/Horse|Knight/.test(t) || /Rohirrim|Riders?\b/.test(src?.name ?? '')) return () => (sample('hoof1', { vol: 0.5, rate: 1.4 }), sample('hoof2', { at: 0.1, vol: 0.5, rate: 1.4 }), sample(['slash1', 'slash2'], { at: 0.2, vol: 0.7 }) || sfx.steal())
+	if (/Orc|Goblin|Troll|Uruk|Wolf|Beast/.test(t)) return () => (sfx.growl(), sample('punch', { at: 0.1, vol: 0.7 }) || sfx.steal())
+	if (/Creature/.test(t)) return () => (sample(['slash1', 'slash2'], { vol: 0.7 }) || sfx.steal())
+	return () => sfx.magic()
+}
+
+/** Pick a sound for a new log line, given the card pool (to know what kind of card did it) and its world. */
+export function soundFor(line: string, find: Lookup = () => undefined, worldOf: (name: string) => World = () => 'trek'): { key: string; play: () => void } | null {
 	// the end of the game has its own sounds (Finale.tsx)
 	if (/ loses \(/.test(line)) return null
 	let m: RegExpMatchArray | null
@@ -263,45 +339,68 @@ export function soundFor(line: string, find: Lookup = () => undefined): { key: s
 		const src = find(m[1])
 		const n = Number(m[2])
 		const toPlayer = !find(m[3])
-		const shot = weapon(src, n >= 5)
+		const me = worldOf(m[1]) === 'me'
+		const shot = me ? meWeapon(src) : trekWeapon(src, n >= 5)
 		return {
 			key: `dmg:${m[1]}`,
 			play: () => {
 				shot()
-				// shields flare on a ship (player); hull rings on a creature
-				if (toPlayer) sample('shield', { at: 0.14, vol: 0.35 + Math.min(0.4, n * 0.05) })
+				if (me) {
+					// a shield takes the blow, or steel rings on steel
+					if (toPlayer) sample('shieldhit', { at: 0.18, vol: 0.4 + Math.min(0.4, n * 0.05) })
+					else sample(['clash1', 'clash2'], { at: 0.18, vol: 0.55 })
+				} else if (toPlayer) sample('shield', { at: 0.14, vol: 0.35 + Math.min(0.4, n * 0.05) })
 				else sample(['clang1', 'clang2'], { at: 0.14, vol: 0.4 })
 			},
 		}
 	}
-	if (/ dies\.| is destroyed/.test(line)) return { key: 'boom', play: () => sample(['boom1', 'boom2', 'boom3'], { vol: 0.75 }) || sfx.defeat() }
-	if (/ is exiled|returns to its owner's hand|is put into its owner's library|phase/.test(line)) return { key: 'beam', play: () => sample(['beam1', 'beam3'], { vol: 0.6 }) || sfx.defeat() }
+	const subject = (re: RegExp) => worldOf(line.match(re)?.[1] ?? '') === 'me'
+	if ((m = line.match(/^(.+?) (?:dies\.|is destroyed)/)))
+		return subject(/^(.+?) (?:dies|is destroyed)/) ? { key: 'boom', play: () => (sample('punch', { vol: 0.7, rate: 0.8 }), sample('chop', { at: 0.08, vol: 0.6 }) || sfx.defeat()) } : { key: 'boom', play: () => sample(['boom1', 'boom2', 'boom3'], { vol: 0.75 }) || sfx.defeat() }
+	if (/ is exiled|returns to its owner's hand|is put into its owner's library|phase/.test(line))
+		return subject(/^(.+?) (?:is exiled|returns|is put)/) ? { key: 'beam', play: () => sfx.magic() } : { key: 'beam', play: () => sample(['beam1', 'beam3'], { vol: 0.6 }) || sfx.defeat() }
 	if (/ is countered/.test(line)) return { key: 'shield', play: () => sample('shield', { vol: 0.7, rate: 0.8 }) || sfx.defeat() }
 	if (/ assimilates /.test(line)) return { key: 'borg', play: () => (sample('assimilate', { vol: 0.8 }) ? sample('computer2', { at: 0.2, vol: 0.4 }) : sfx.program()) }
+	if (/the Ring tempts/.test(line)) return { key: 'ring', play: () => sfx.ring() }
+	if (/becomes the monarch/.test(line)) return { key: 'monarch', play: () => sample('bell', { vol: 0.45, rate: 1.2 }) || sfx.chime() }
+	if (/ amasses /.test(line)) return { key: 'amass', play: () => (sample('hoof1', { vol: 0.5, rate: 0.7 }), sample('hoof2', { at: 0.22, vol: 0.5, rate: 0.7 }), sfx.growl()) }
 	if ((m = line.match(/ attacks with (.+)\.$/))) {
-		const ships = m[1].split(', ').some((n) => /Spacecraft/.test(find(n)?.typeLine ?? ''))
+		const names = m[1].split(', ')
+		if (names.some((n) => worldOf(n) === 'me')) {
+			const riders = names.some((n) => /Horse|Knight/.test(find(n)?.typeLine ?? '') || /Rohirrim|Rider/.test(n))
+			return { key: 'attack', play: () => (sfx.horn(), riders && [0.3, 0.42, 0.54, 0.66].forEach((at, i) => sample(i % 2 ? 'hoof2' : 'hoof1', { at, vol: 0.45 }))) }
+		}
+		const ships = names.some((n) => /Spacecraft/.test(find(n)?.typeLine ?? ''))
 		return { key: 'attack', play: () => sample(ships ? 'engine' : 'door_open', { vol: ships ? 0.6 : 0.5, rate: ships ? 1.2 : 0.8 }) || sfx.attack() }
 	}
-	if (/ blocks: /.test(line)) return { key: 'block', play: () => sample('shield', { vol: 0.55 }) || sfx.click() }
-	if (/ casts .+ from|returns to the command zone/.test(line)) return { key: 'legend', play: () => (sample('door_open', { vol: 0.6 }), sfx.legend()) }
-	if ((m = line.match(/ casts (.+?)(?: targeting .+)?(?: without paying its mana cost| with flashback| \(X=\d+\)| \(kicked\))*\.$/))) return { key: 'cast', play: () => sample(['computer1', 'computer2'], { vol: 0.45 }) || sfx.program() }
+	if ((m = line.match(/ blocks: (.+?) blocks/))) return { key: 'block', play: () => (worldOf(m![1]) === 'me' ? sample('shieldhit', { vol: 0.55 }) : sample('shield', { vol: 0.55 })) || sfx.click() }
+	if (/ casts .+ from|returns to the command zone/.test(line)) return { key: 'legend', play: () => (sfx.place(), sfx.legend()) }
+	if ((m = line.match(/ casts (.+?)(?: targeting .+)?(?: without paying its mana cost| with flashback| \(X=\d+\)| \(kicked\))*\.$/))) {
+		const c = find(m[1])
+		const spell = /Instant|Sorcery/.test(c?.typeLine ?? '')
+		if (worldOf(m[1]) === 'me') return { key: 'cast', play: () => (spell ? sample('page', { vol: 0.5 }) || sfx.program() : sfx.click()) }
+		return { key: 'cast', play: () => (spell ? sample(['computer1', 'computer2'], { vol: 0.45 }) || sfx.program() : sfx.click()) }
+	}
+	// putting cards on the table: a pleasant card-on-felt tap (equipment latches on in Middle-earth)
 	if ((m = line.match(/^(.+) enters the battlefield\.$/))) {
 		const c = find(m[1])
-		const t = c?.typeLine ?? ''
-		if (/Spacecraft/.test(t)) return { key: 'enter', play: () => sample('engine', { vol: 0.55 }) || sfx.play() }
-		if (/Creature/.test(t)) return { key: 'enter', play: () => sample('beam2', { vol: 0.45, rate: 1.1 }) || sfx.play() }
-		if (/Artifact/.test(t)) return { key: 'enter', play: () => sample(['clang1', 'clang2'], { vol: 0.45 }) || sfx.play() }
-		return { key: 'enter', play: () => sfx.play() }
+		if (worldOf(m[1]) === 'me' && /Equipment/.test(c?.typeLine ?? '')) return { key: 'enter', play: () => (sfx.place(), sample('latch', { at: 0.12, vol: 0.4 })) }
+		return { key: 'enter', play: () => sfx.place() }
 	}
-	if (/ plays /.test(line)) return { key: 'land', play: () => sfx.play() }
-	if (/ creates /.test(line)) return { key: 'token', play: () => sample('beam2', { vol: 0.45, rate: 1.25 }) || sfx.sell() }
+	if (/ plays /.test(line)) return { key: 'land', play: () => sfx.place() }
+	if ((m = line.match(/ creates .*?(Treasure|Food|Clue)?(?: token)/))) {
+		if (/Treasure/.test(line)) return { key: 'token', play: () => (sfx.place(), sample('coins', { at: 0.05, vol: 0.45 })) }
+		return { key: 'token', play: () => sfx.place() }
+	}
+	if (/ is attached to /.test(line)) return { key: 'equip', play: () => sample('sword_draw1', { vol: 0.5 }) || sfx.click() }
 	if (/charge counter|Station/.test(line)) return { key: 'charge', play: () => sample('charge', { vol: 0.5 }) || sfx.sell() }
-	if (/ gains \d+ life/.test(line)) return { key: 'life', play: () => sample('shield', { vol: 0.35, rate: 1.3 }) || sfx.sell() }
-	if (/ draws /.test(line)) return { key: 'draw', play: () => sfx.draw() }
+	if (/ gains \d+ life/.test(line)) return { key: 'life', play: () => sfx.chime() }
+	if (/ draws /.test(line)) return { key: 'draw', play: () => sfx.slide() }
+	if (/shuffles/.test(line)) return { key: 'shuffle', play: () => sample('shuffle', { vol: 0.45 }) || sfx.draw() }
 	if (/additional combat phase|Red alert/i.test(line)) return { key: 'combat', play: () => sfx.redAlert() }
-	if (/^— Turn/.test(line)) return { key: 'turn', play: () => sample('door_close', { vol: 0.35 }) || sfx.turn() }
+	if (/^— Turn/.test(line)) return { key: 'turn', play: () => sample('slide2', { vol: 0.35, rate: 0.8 }) || sfx.turn() }
 	return null
 }
 
 /** Several things died at once: one big blast instead of a crackle of small ones. */
-export const bigBlast = () => sample(['bigboom', 'bigboom2'], { vol: 0.9 }) || sfx.defeat()
+export const bigBlast = (world: World = 'trek') => (world === 'me' ? (sfx.fire(), sample('punch', { at: 0.2, vol: 0.8 })) : sample(['bigboom', 'bigboom2'], { vol: 0.9 })) || sfx.defeat()

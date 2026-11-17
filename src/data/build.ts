@@ -8,7 +8,7 @@ import { missingDef, slug } from './scryfall'
 export interface PlayerChoice {
 	name: string
 	deck: string
-	leader: 'commander' | 'alt'
+	leader: 'commander' | 'alt' | 'both'
 	bot?: boolean
 }
 

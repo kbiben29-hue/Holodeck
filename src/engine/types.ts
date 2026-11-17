@@ -177,6 +177,8 @@ export interface PlayerState {
 	fullControl?: boolean
 	/** Steps where this player always gets to act, on either player's turn. */
 	stops?: Step[]
+	/** The One Ring (Middle-earth): how many times it has tempted this player (1–4 abilities) and the Ring-bearer. */
+	ring?: { level: number; bearer?: number }
 }
 
 export type Step =
@@ -281,9 +283,11 @@ export interface GameState {
 	/** Number of free (land-or-not) state changes, to stop runaway loops. */
 	ticks: number
 	/** Things that happen later ("at the beginning of the next end step"). */
-	delayed?: { at: 'end' | 'cleanup' | 'endCombat' | 'upkeep'; kind: 'return' | 'exile' | 'control' | 'bottom' | 'rebound'; iid: number; owner?: number; draw?: boolean }[]
+	delayed?: { at: 'end' | 'cleanup' | 'endCombat' | 'upkeep'; kind: 'return' | 'exile' | 'control' | 'bottom' | 'rebound' | 'sacrifice'; iid: number; owner?: number; draw?: boolean }[]
 	/** Additional combat phases still to come this turn (each followed by a main phase). */
 	extraCombats?: number
+	/** The monarch (draws a card at the beginning of their end step; combat damage to them takes the crown). */
+	monarch?: number
 	/** Additional combat phases right after this one (no main phase in between). */
 	extraCombatsNow?: number
 	/** World at War: untap the creatures that attacked when that many of the extra combats begin. */

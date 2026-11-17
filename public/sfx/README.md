@@ -18,5 +18,17 @@ Recorded effects from **Kenney's "Sci-Fi Sounds"** pack (https://kenney.nl/asset
 | clang1–2 | impact_metal_000 / 002 |
 | assimilate | slime_000 |
 
-No music, and nothing taken from any film or TV show: the "phaser", "torpedo" and "transporter" moments use these
-generic sci-fi sounds plus effects synthesized live in `src/ui/sfx.ts`.
+From **Kenney's audio packs** (Casino, Interface, RPG and Impact sounds — CC0, see `LICENSE-CC0-kenney-audio.md`):
+
+| file | from |
+| --- | --- |
+| place1–4 (cards set on the table) | cardPlace1–4 |
+| slide1–3 (drawing), shuffle | cardSlide1 / 3 / 5, cardShuffle |
+| click | click3 |
+| sword_draw1–2, slash1–2, chop | drawKnife1 / 2, knifeSlice / knifeSlice2, chop |
+| clash1–2, shieldhit, punch, wood, bell | impact_metal_heavy_000 / 002, impact_plate_heavy_000, impact_punch_heavy_000, impact_wood_heavy_000, impact_bell_heavy_000 |
+| hoof1–2 | footstep_grass_000 / 001 |
+| coins, page, creak, cloth, latch | handleCoins, bookFlip1, creak1, cloth1, metalLatch |
+
+No music, and nothing taken from any film or TV show: the "phaser", "torpedo", "transporter", sword, arrow, horn
+and magic moments use these generic sounds plus effects synthesized live in `src/ui/sfx.ts`.

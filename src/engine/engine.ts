@@ -212,6 +212,44 @@ export function castFree(s: GameState, p: number, iid: number) {
 	s.tasks.unshift({ tid: s.nextId++, kind: 'cast', player: p, answers: {}, data: { iid, free: true } })
 }
 
+// ───────── the One Ring (Middle-earth) ─────────
+
+const RING_TEXT = [
+	'Your Ring-bearer is legendary and can’t be blocked by creatures with greater power.',
+	'Whenever your Ring-bearer attacks, draw a card, then discard a card.',
+	'Whenever your Ring-bearer becomes blocked by a creature, that creature’s controller sacrifices it at end of combat.',
+	'Whenever your Ring-bearer deals combat damage to a player, each opponent loses 3 life.',
+]
+
+/** The Ring tempts player p: the Ring gains its next ability, they choose a Ring-bearer, triggers fire. */
+function tempt(ctx: Ctx, p: number, key: string) {
+	const s = ctx.s
+	const pl = s.players[p]
+	const ring = (pl.ring ??= { level: 0 })
+	const creatures = s.battlefield.filter((q) => q.controller === p && isCreature(s, q))
+	if (creatures.length) {
+		const [pick] = ctx.ask(p, {
+			key: key + 'ring',
+			prompt: `The Ring tempts you: choose your Ring-bearer.\n${RING_TEXT.slice(0, Math.min(4, ring.level + 1)).map((x, i) => `${i + 1}. ${x}`).join('\n')}`,
+			options: creatures.map((q) => ({ id: String(q.iid), label: permName(s, q), card: q.card, iid: q.iid, score: (q.iid === ring.bearer ? 2 : 0) + pt(s, q)[0] - (hasKw(s, q, 'defender') ? 10 : 0) })),
+			min: 1,
+			max: 1,
+			cards: true,
+		})
+		ring.bearer = Number(pick)
+	}
+	ring.level = Math.min(4, ring.level + 1)
+	const bearer = ring.bearer !== undefined ? findPerm(s, ring.bearer) : undefined
+	log(s, `The Ring tempts ${pl.name} (the Ring has ${ring.level} abilit${ring.level === 1 ? 'y' : 'ies'})${bearer ? `; ${permName(s, bearer)} is the Ring-bearer` : ''}.`)
+	for (const q of s.battlefield) if (q.controller === p) fire(s, q, 'ringTempts')
+}
+
+/** Is this permanent its controller's Ring-bearer, with the Ring at least at this level? */
+function ringBearer(s: GameState, p: Perm, level = 1): boolean {
+	const r = s.players[p.controller].ring
+	return !!r && r.bearer === p.iid && r.level >= level
+}
+
 function later(s: GameState, d: NonNullable<GameState['delayed']>[number]) {
 	;(s.delayed ??= []).push(d)
 }
@@ -235,6 +273,8 @@ function runDelayed(s: GameState, at: 'end' | 'cleanup' | 'endCombat' | 'upkeep'
 			}
 		} else if (d.kind === 'exile') {
 			if (findPerm(s, d.iid)) moveCard(s, d.iid, 'exile')
+		} else if (d.kind === 'sacrifice') {
+			if (findPerm(s, d.iid)) moveCard(s, d.iid, 'graveyard', { cause: 'sacrifice' })
 		} else if (d.kind === 'bottom') {
 			if (findPerm(s, d.iid)) {
 				moveCard(s, d.iid, 'libraryBottom')
@@ -502,6 +542,7 @@ setHooks({
 	setTapped,
 	later,
 	discover,
+	tempt,
 	move: (s, iid, to, opts) => moveCard(s, iid, to, opts),
 	destroy,
 	damage: dealDamage,
@@ -1132,6 +1173,12 @@ function doScript(ctx: Ctx) {
 		searchFx(ctx, ctx.task.player, { e: 'search', filter: { types: ['land'], not: [], basic: true }, count: 1, dest: 'hand', tapped: false, reveal: true }, 'cs')
 		return
 	}
+	if (d.kind === 'ringLoot') {
+		const p = ctx.task.player
+		drawCards(s, p, 1)
+		discardFx(ctx, p, 1, 'rl')
+		return
+	}
 	if (d.kind === 'cleanupDiscard') {
 		const p = s.active
 		const n = s.players[p].hand.length - 7
@@ -1234,6 +1281,8 @@ export function canBlock(s: GameState, blocker: Perm, attacker: Perm): boolean {
 	const bk = keywords(s, blocker)
 	const ar = rulesOf(s, attacker)
 	if (bk.includes('cantblock') || rulesOf(s, blocker).cantBlock) return false
+	// the Ring's first ability: creatures with greater power can't block the Ring-bearer
+	if (ringBearer(s, attacker, 1) && pt(s, blocker)[0] > pt(s, attacker)[0]) return false
 	if (ar.unblockable === true || (ar.unblockable === 'ifSpacecraft' && s.battlefield.some((q) => q.controller === attacker.controller && rulesOf(s, q).subtypes.includes('Spacecraft')))) return false
 	if (ar.evasionPower !== undefined && pt(s, blocker)[0] <= ar.evasionPower) return false
 	if ((ak.includes('flying') || ak.includes('horsemanship')) && !bk.includes('flying') && !bk.includes('reach')) return false
@@ -1353,6 +1402,11 @@ function enterStep(s: GameState, step: Step) {
 			break
 		case 'end':
 			runDelayed(s, 'end')
+			// the monarch draws a card at the beginning of their end step
+			if (s.monarch === a) {
+				log(s, `${s.players[a].name} draws a card as the monarch.`)
+				drawCards(s, a, 1, true)
+			}
 			for (const p of s.battlefield) {
 				if (p.controller === a) fire(s, p, 'endStep')
 				fire(s, p, 'eachEndStep')
@@ -1448,7 +1502,21 @@ function combatDamage(s: GameState, first: boolean) {
 	}
 	for (const d of dealt) {
 		dealDamage(s, { card: d.src.card, controller: d.src.controller, iid: d.src.iid }, d.t, d.n, true)
-		if (d.t.kind === 'player') fire(s, d.src, 'combatDamagePlayer', d.n)
+		if (d.t.kind === 'player') {
+			fire(s, d.src, 'combatDamagePlayer', d.n)
+			// combat damage to the monarch takes the crown
+			if (s.monarch === d.t.id && d.src.controller !== d.t.id) {
+				s.monarch = d.src.controller
+				log(s, `${s.players[d.src.controller].name} becomes the monarch.`)
+			}
+			// the Ring's fourth ability
+			if (ringBearer(s, d.src, 4))
+				for (let o = 0; o < s.players.length; o++)
+					if (o !== d.src.controller) {
+						s.players[o].life -= 3
+						log(s, `${s.players[o].name} loses 3 life (the Ring).`)
+					}
+		}
 	}
 	// Right of Vengeance: "until end of turn, whenever a creature deals combat damage to you, destroy it and create a 2/1 Klingon Warrior"
 	const veng = (s as { vengeance?: { player: number; turn: number }[] }).vengeance?.filter((v) => v.turn === s.turn) ?? []
@@ -1689,6 +1757,8 @@ export function apply(s0: GameState, intent: Intent): GameState {
 				if (!hasKw(s, a, 'vigilance')) setTapped(s, a, true)
 				a.attackedTurn = s.turn
 				fire(s, a, 'attacks')
+				// the Ring's second ability: the Ring-bearer loots when it attacks
+				if (ringBearer(s, a, 2)) addTask(s, 'script', a.controller, { kind: 'ringLoot' })
 			}
 			if (intent.attackers.length) {
 				const atk = intent.attackers.map((iid) => findPerm(s, iid)!).filter(Boolean)
@@ -1735,6 +1805,11 @@ export function apply(s0: GameState, intent: Intent): GameState {
 			}
 			c.blocks = intent.blocks
 			c.blocksDeclared = true
+			// the Ring's third ability: whoever blocks the Ring-bearer loses that creature at end of combat
+			for (const b of c.blocks) {
+				const att = findPerm(s, b.attacker)
+				if (att && ringBearer(s, att, 3)) later(s, { at: 'endCombat', kind: 'sacrifice', iid: b.blocker })
+			}
 			for (const b of intent.blocks) fire(s, findPerm(s, b.blocker)!, 'blocks')
 			if (intent.blocks.length) log(s, `${s.players[p].name} blocks: ${intent.blocks.map((b) => `${permName(s, findPerm(s, b.blocker)!)} blocks ${permName(s, findPerm(s, b.attacker)!)}`).join('; ')}.`)
 			else log(s, `${s.players[p].name} doesn't block.`)

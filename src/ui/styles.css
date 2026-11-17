@@ -2894,3 +2894,98 @@ body {
 	color: var(--dim);
 	border: 1px solid var(--line);
 }
+.crown {
+	color: var(--gold);
+	font-size: 22px;
+	text-shadow: 0 0 8px rgba(255, 204, 102, 0.6);
+}
+.ringlvl {
+	font-size: 15px;
+	padding: 2px 8px;
+	border-radius: 999px;
+	background: rgba(255, 204, 102, 0.15);
+	border: 1px solid rgba(255, 204, 102, 0.5);
+	color: var(--gold);
+}
+.badge.ringb {
+	position: absolute;
+	top: 18px;
+	right: 2px;
+	font-size: 14px;
+	filter: drop-shadow(0 0 4px gold);
+}
+/* Middle-earth endings */
+.finale.animated.dawn,
+.finale.animated.shadow {
+	background: #000;
+}
+.finale.animated.shadow {
+	background: transparent;
+}
+.me-banner {
+	position: relative;
+	font-family: 'Cinzel', Georgia, serif;
+	font-weight: 700;
+	font-size: 64px;
+	letter-spacing: 0.08em;
+	animation: me-in 1.6s ease-out both;
+}
+.dawn-text {
+	color: #fff4d6;
+	text-shadow: 0 0 30px rgba(255, 200, 110, 0.9), 0 4px 18px rgba(80, 40, 0, 0.6);
+}
+.shadow-text {
+	color: #ff7a3a;
+	text-shadow: 0 0 26px rgba(255, 60, 0, 0.8);
+}
+@keyframes me-in {
+	from {
+		opacity: 0;
+		letter-spacing: 0.4em;
+	}
+}
+.pocket .me-banner {
+	font-size: 34px;
+}
+/* the report on parchment for Middle-earth */
+.finale-panel.parchment {
+	--fp: #8a5a1c;
+}
+.finale-panel.parchment.lose {
+	--fp: #7a1c12;
+}
+.finale-panel.parchment .fp-elbow {
+	background: linear-gradient(#6b4a1f, #3d2a10);
+	border-radius: 14px 0 0 14px;
+	width: 24px;
+}
+.finale-panel.parchment .fp-body {
+	background: linear-gradient(#f3e4c0, #e2cd9c);
+	color: #2b1d0c;
+	border-top-width: 6px;
+	border-radius: 0 14px 14px 0;
+}
+.finale-panel.parchment .fp-top {
+	background: #e9d7ae;
+	margin-top: -6px;
+	line-height: 6px;
+	padding-top: 6px;
+	color: #6b4a1f;
+}
+.finale-panel.parchment h1 {
+	text-shadow: none;
+}
+.finale-panel.parchment .fp-line {
+	color: #2b1d0c;
+	font-family: 'Cinzel', Georgia, serif;
+}
+.finale-panel.parchment .fp-stats div {
+	background: rgba(120, 80, 30, 0.12);
+}
+.finale-panel.parchment .fp-stats b {
+	color: #6b4a1f;
+}
+.finale-panel.parchment .fp-stats span,
+.finale-panel.parchment .fp-why {
+	color: #5b4a30;
+}

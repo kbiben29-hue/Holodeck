@@ -1,4 +1,4 @@
-// Deck lessons for the four Star Trek Commander decks: a game-plan guide per deck, combo alerts during a
+// Deck lessons for the Star Trek and Middle-earth Commander decks: a game-plan guide per deck, combo alerts during a
 // coached game, and combo drills (set positions with a goal and step-by-step coaching).
 // All text is our own wording.
 
@@ -9,10 +9,10 @@ import { findPerm, isCreature } from '../engine/state'
 import type { CardDef, Format, GameState } from '../engine/types'
 import type { CoachStep, Hint } from './coach'
 
-export type DeckId = 'federation' | 'landing' | 'klingon' | 'borg'
+export type DeckId = 'federation' | 'landing' | 'klingon' | 'borg' | 'rohan' | 'fellowship' | 'elven' | 'mordor'
 export const deckName = (id: string) => DECKS.find((d) => d.id === id)?.name ?? id
 /** The opponent deck used in a deck's coached game and drills. */
-export const rivalDeck = (id: DeckId): DeckId => ({ federation: 'klingon', klingon: 'federation', borg: 'landing', landing: 'borg' })[id] as DeckId
+export const rivalDeck = (id: DeckId): DeckId => ({ federation: 'klingon', klingon: 'federation', borg: 'landing', landing: 'borg', rohan: 'mordor', mordor: 'rohan', fellowship: 'elven', elven: 'fellowship' })[id] as DeckId
 
 // ───────── game plans ─────────
 
@@ -95,6 +95,62 @@ export const PLANS: Record<DeckId, { title: string; body: string }[]> = {
 		{
 			title: 'Artifacts matter',
 			body: 'Almost everything here is an artifact, which turns on Metalcraft (three or more artifacts): Dispatch exiles a creature instead of just tapping it. Thoughtcast gets cheaper, Skullclamp turns dying tokens into cards, and Emergency Regeneration saves the whole collective from a board wipe.',
+		},
+	],
+	rohan: [
+		{
+			title: 'Riders of Rohan — the game plan',
+			body: 'White-Blue-Red, led by Éowyn, Shieldmaiden (or Aragorn, King of Gondor). The men of Rohan and Gondor: an army of Humans that grows wide, gets stronger together and charges in as one. Most of your creatures are Humans, so the cards that care about a creature type all point the same way.',
+		},
+		{
+			title: 'One army, one type',
+			body: 'Herald’s Horn and Door of Destinies (name Human), Vanquisher’s Banner and Path of Ancestry reward playing Humans; Shared Animosity and Marshal’s Anthem turn a wide board into a deadly one. Keep casting creatures before you attack, and attack together.',
+		},
+		{
+			title: 'Holding the line',
+			body: 'Swords to Plowshares, Path to Exile, Banishing Light, Fiend Hunter and Palace Jailer answer the biggest threat; Supreme Verdict is your reset when you fall behind. Unbreakable Formation and Selfless Squire keep your army alive through a bad trade or a board wipe.',
+		},
+	],
+	fellowship: [
+		{
+			title: 'Food and Fellowship — the game plan',
+			body: 'White-Black-Green, led by Frodo and Sam together (they are partners: both start in the command zone). Hobbits make Food, eat it, and get stronger for it — a slow, sturdy deck that gains life and turns that life into card draw and damage.',
+		},
+		{
+			title: 'Food',
+			body: 'A Food is an artifact token: {2}, tap, sacrifice it to gain 3 life. Many cards here make Food or care when you sacrifice it — Gilded Goose, Tireless Provisioner, Prize Pig, Trading Post — so every Food is a little resource for your other cards, not just life.',
+		},
+		{
+			title: 'Life is a weapon',
+			body: 'Dawn of Hope and Well of Lost Dreams turn life gain into cards, Sanguine Bond turns it into damage, and Essence Warden and Prosperous Innkeeper keep the life coming. When you’re behind on the board, Toxic Deluge, Fumigate or Dusk clear the way.',
+		},
+	],
+	elven: [
+		{
+			title: 'Elven Council — the game plan',
+			body: 'Green-Blue, led by Galadriel, Elven-Queen (or Gandalf, Westward Voyager). The Elves of Lothlórien and Rivendell: ramp hard with mana Elves, look ahead with scry and card selection, then land something enormous.',
+		},
+		{
+			title: 'Elves make mana',
+			body: 'Elvish Mystic, Arbor Elf, Paradise Druid, Elvish Archdruid and Wood Elves put you several turns ahead. Elvish Warmaster and Elvish Visionary keep the Elf count growing, which makes the Archdruid even better.',
+		},
+		{
+			title: 'The big finish',
+			body: 'Hornet Queen, Colossal Whale, Genesis Wave and Overwhelming Stampede end games once your mana is ready. Protect your plan with Heroic Intervention, Swan Song, Lightning Greaves and Whispersilk Cloak — and save Beast Within and Lignify for the opponent’s best threat.',
+		},
+	],
+	mordor: [
+		{
+			title: 'The Hosts of Mordor — the game plan',
+			body: 'Blue-Black-Red, led by Sauron, Lord of the Rings (or Saruman, the White Hand). Overwhelming force: armies of Orcs, dragons and monsters, a graveyard to raise them from, and the Ring tempting you all along.',
+		},
+		{
+			title: 'The Ring tempts you',
+			body: 'Each time the Ring tempts you, you choose a creature as your Ring-bearer and the Ring grows stronger (four stages): the bearer can’t be blocked by bigger creatures, then it loots when it attacks, then blockers that block it are sacrificed, and finally each hit makes the opponent lose 3 life.',
+		},
+		{
+			title: 'Raise the dead, burn the rest',
+			body: 'Living Death and Reanimate bring your biggest creatures back; Inferno Titan, Cavern-Hoard Dragon and Knollspine Dragon do the heavy lifting. Blasphemous Act and Languish clear the board when you need room, and Hostage Taker takes the best thing the opponent has.',
 		},
 	],
 }

@@ -2,6 +2,7 @@ import { useEffect, useMemo, useRef, useState, type CSSProperties, type MouseEve
 import { abilityProblem, canAttack, canBlock, canCast, canPlayLand, commanderTax, manaAbilitiesOf, spellCost, STEP_NAMES, tryApply } from '../engine/engine'
 import { costText } from '../engine/mana'
 import { flyFrom, useMotion } from './motion'
+import { playerWorld, worldOf, type World } from './world'
 import { NAMED } from '../engine/named'
 import type { Pace } from './prefs'
 import { Arrows } from './Arrows'
@@ -338,6 +339,8 @@ export function Board(props: BoardProps) {
 	const hPerm = new Set(H?.perms ?? [])
 	// sounds for new log lines
 	const logLen = useRef(s.log.length)
+	const worldRef = useRef<World>('trek')
+	worldRef.current = useMemo(() => playerWorld(s, me), [s.players[me].commanders.join(), me, s.cards])
 	useEffect(() => {
 		const fresh = s.log.slice(logLen.current)
 		logLen.current = s.log.length
@@ -346,14 +349,15 @@ export function Board(props: BoardProps) {
 		for (const c of Object.values(s.cards)) if (!byName.has(c.name)) byName.set(c.name, c)
 		const find = (n: string) => byName.get(n) ?? byName.get(n.replace(/ token$/, ''))
 		const deaths = fresh.filter((l) => / dies\.| is destroyed/.test(l)).length
+		const world = worldRef.current
 		const played = new Set<string>()
 		let at = 0
 		if (deaths >= 3) {
-			bigBlast()
+			bigBlast(world)
 			played.add('boom')
 		}
 		for (const line of fresh.slice(-8)) {
-			const f = soundFor(line, find)
+			const f = soundFor(line, find, worldOf(world))
 			if (!f || played.has(f.key) || played.size >= 4) continue
 			played.add(f.key)
 			window.setTimeout(f.play, at)
@@ -557,6 +561,7 @@ export function Board(props: BoardProps) {
 					{p.sick && creature && p.controller === s.active && <span className="badge sick" title="Summoning sick">z</span>}
 					{p.token && <span className="badge tok">token</span>}
 					{p.commander && <span className="badge cmd">★</span>}
+					{s.players[p.controller].ring?.bearer === p.iid && <span className="badge ringb" title="Ring-bearer">💍</span>}
 					{counters.length > 0 && (
 						<span className="counters">
 							{counters.map(([k, v]) => (
@@ -711,6 +716,16 @@ export function Board(props: BoardProps) {
 					{pl.name}
 					{pl.bot ? ' 🤖' : ''}
 				</span>
+				{s.monarch === p && (
+					<span className="crown" title="The monarch: draws an extra card at the end of each of their turns. Deal combat damage to them to take the crown.">
+						♛
+					</span>
+				)}
+				{pl.ring && (
+					<span className="ringlvl" title={`The Ring has tempted ${pl.name} ${pl.ring.level} time${pl.ring.level > 1 ? 's' : ''}. Ring-bearer: ${pl.ring.bearer !== undefined && findPerm(s, pl.ring.bearer) ? permName(s, findPerm(s, pl.ring.bearer)!) : 'none'}.`}>
+						💍 {pl.ring.level}
+					</span>
+				)}
 				{!isMe && layout === 'console' && pl.hand.length > 0 && (
 					<span className="opp-hand" title={`${pl.hand.length} cards in hand`}>
 						{pl.hand.slice(0, 12).map((o, i) => (

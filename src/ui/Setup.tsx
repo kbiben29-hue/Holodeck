@@ -15,12 +15,17 @@ export interface SetupResult {
 	lesson?: { deck: DeckId; drill?: string }
 	names: [string, string]
 	decks: [string, string]
-	leaders: ['commander' | 'alt', 'commander' | 'alt']
+	leaders: [Leader, Leader]
 	format: Format['id']
 	seed: number
 }
 
+type Leader = 'commander' | 'alt' | 'both'
 const NAME_KEY = 'holodeck.name'
+const WORLDS = [
+	{ id: 'trek', label: 'Star Trek' },
+	{ id: 'me', label: 'The Lord of the Rings' },
+] as const
 
 export function Setup({ pool, loading, onReload, onStart, joinCode, resume, initialLessons }: { pool: CardPool | null; loading: { f: number; text: string; error?: string } | null; onReload: () => void; onStart: (r: SetupResult) => void; joinCode: string | null; resume?: { label: string; go: () => void }; initialLessons?: boolean }) {
 	const [lessons, setLessons] = useState(!!initialLessons)
@@ -34,11 +39,25 @@ export function Setup({ pool, loading, onReload, onStart, joinCode, resume, init
 
 	const deckPicker = (i: 0 | 1) => (
 		<div className="deckpick">
-			{DECKS.map((d) => {
+			{WORLDS.map((w) => (
+				<div key={w.id} className="world-row">
+					<span className="world-label">{w.label}</span>
+			{DECKS.filter((d) => (d.world ?? 'trek') === w.id).map((d) => {
 				const lead = leaders[i] === 'alt' && decks[i] === d.id ? d.alt : d.commander
 				const img = pool?.cards[slug(lead)]?.image
 				return (
-					<button key={d.id} className={`decktile ${decks[i] === d.id ? 'on' : ''}`} onClick={() => setDecks((x) => (i === 0 ? [d.id, x[1]] : [x[0], d.id]))}>
+					<button
+						key={d.id}
+						className={`decktile ${decks[i] === d.id ? 'on' : ''}`}
+						onClick={() => {
+							setDecks((x) => (i === 0 ? [d.id, x[1]] : [x[0], d.id]))
+							// partners lead together unless you pick one of them
+							setLeaders((x) => {
+								const l: Leader = d.partners ? 'both' : 'commander'
+								return i === 0 ? [l, x[1]] : [x[0], l]
+							})
+						}}
+					>
 						{img ? <img src={img} alt={lead} /> : <div className="noimg">{lead}</div>}
 						<span className="dname">{d.name}</span>
 						<span className="dcolors">
@@ -49,6 +68,8 @@ export function Setup({ pool, loading, onReload, onStart, joinCode, resume, init
 					</button>
 				)
 			})}
+				</div>
+			))}
 			{FORMATS[format].noCommander ? (
 				<details className="leader sixty-list">
 					<summary>The 60 cards</summary>
@@ -57,11 +78,12 @@ export function Setup({ pool, loading, onReload, onStart, joinCode, resume, init
 			) : (
 			<div className="leader">
 				Commander:
-				{(['commander', 'alt'] as const).map((l) => {
+				{(DECKS.find((x) => x.id === decks[i])!.partners ? (['both', 'commander', 'alt'] as const) : (['commander', 'alt'] as const)).map((l) => {
 					const d = DECKS.find((x) => x.id === decks[i])!
+					const short = (n: string) => n.split(',')[0]
 					return (
 						<button key={l} className={leaders[i] === l ? 'primary' : ''} onClick={() => setLeaders((x) => (i === 0 ? [l, x[1]] : [x[0], l]))}>
-							{(l === 'commander' ? d.commander : d.alt).split(',')[0]}
+							{l === 'both' ? `${short(d.commander)} & ${short(d.alt)}` : short(l === 'commander' ? d.commander : d.alt)}
 						</button>
 					)
 				})}
@@ -151,7 +173,7 @@ export function Setup({ pool, loading, onReload, onStart, joinCode, resume, init
 			<div className="lcars-head">
 				<span className="elbow" />
 				<h1>{APP_NAME}</h1>
-				<span className="sub">STAR TREK · COMMANDER · TWO PLAYERS</span>
+				<span className="sub">STAR TREK & MIDDLE-EARTH · COMMANDER · TWO PLAYERS</span>
 			</div>
 			<div className="setup-body">
 				<div className="carddata">
@@ -244,7 +266,7 @@ export function Setup({ pool, loading, onReload, onStart, joinCode, resume, init
 						</section>
 						<p className="dim small">
 							{format === 'sixty' && <>Classic 60-card: each deck is cut to 60 cards (24 lands, 36 spells on a normal curve, both legends included as regular cards, anything that needs a commander left out). 20 life, no command zone, standard Magic rules. </>}
-							Duel Commander is the usual 2-player way to play Commander: 20 life and no commander damage. Its ban list is not used, so the decks play as they come out of the box. Card images and text come from Scryfall. This is a fan project; it isn’t affiliated with Wizards of the Coast or Paramount.
+							Duel Commander is the usual 2-player way to play Commander: 20 life and no commander damage. Its ban list is not used, so the decks play as they come out of the box. Card images and text come from Scryfall. This is a fan project; it isn’t affiliated with Wizards of the Coast, Paramount or Middle-earth Enterprises.
 						</p>
 					</>
 				)}

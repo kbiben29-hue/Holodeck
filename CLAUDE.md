@@ -1,7 +1,7 @@
 # CLAUDE.md
 
-Holodeck is an unofficial browser table for the four Magic: The Gathering | Star Trek Commander decks,
-two players (Duel Commander by default). Sibling of Afterlife (kbiben29-hue/Afterlife-) and Ready Room
+Holodeck is an unofficial browser table for the four Magic: The Gathering | Star Trek Commander decks and the four
+The Lord of the Rings: Tales of Middle-earth Commander decks (`world: 'me'` in decks.ts; Frodo & Sam are partners), two players (Duel Commander by default). Sibling of Afterlife (kbiben29-hue/Afterlife-) and Ready Room
 (kbiben29-hue/readyroom); same ideas: pure TypeScript engine, React UI, fit-to-screen table, hot-seat,
 bot, PeerJS online play, Pages + Tauri releases.
 
@@ -26,6 +26,8 @@ npm run build
   trigger overrides (`T`). `src/engine/scripts.ts` — more Star Trek card scripts: `trig` (add a trigger),
   `act` (script an activated ability), `spell`, `done`; registries `CDA`, `GRANTS`, `BUFFS`, `COST_MODS` in state.ts.
   Extra combats (`extraCombats`), rebound and `delayed` (end, cleanup, endCombat, upkeep) live in engine.ts.
+- Middle-earth mechanics: `tempt` (the Ring tempts you: Ring-bearer + 4 levels, `ringBearer` in engine.ts), `amass`,
+  `monarch` effects; `middleearth.test.ts`. `src/ui/world.ts` picks the world (sounds, ending) from a player's deck.
 - `src/engine/mana.ts` — costs and the payment solver. `engine.ts` — flow, priority, combat, SBAs,
   commander rules, table tools. Smart stops: players auto-pass when they can't do anything (`wantsStop`).
 - `src/bot/bot.ts` — greedy "Ensign" bot. `src/data/decks.ts` — the four decklists (names only).
@@ -53,7 +55,7 @@ npm run build
 - Drag to play: `beginDrag` in Board.tsx (hand/command card → `[data-drop]` play/graveyard/exile); `flyFrom` in motion.ts
   starts the card's next move from where it was dropped.
 - `src/ui/Finale.tsx` — end of game: warp jump (win), red alert + warp-core breach (lose), assimilation (lose to
-  Borg), then an LCARS-style report. Canvas + synthesized sounds (`sfx.warp/redAlert/breach/assimilated`).
+  Borg), then an LCARS-style report; Middle-earth decks get sunrise (win) / darkness falls (lose) and a parchment report. Canvas + synthesized sounds (`sfx.warp/redAlert/breach/assimilated`).
 - `src/ui/Board.tsx` — console (1600×1000 scaled) and pocket (phone) layouts; `src/App.tsx` — sessions,
   autosave, undo, bot loop, online host/guest. `src/config.ts` — repo/play URL.
 

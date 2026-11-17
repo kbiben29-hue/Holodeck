@@ -50,6 +50,8 @@ export interface EngineHooks {
 	setTapped(s: GameState, p: Perm, tapped: boolean): void
 	later(s: GameState, d: NonNullable<GameState['delayed']>[number]): void
 	discover(ctx: Ctx, p: number, n: number, key: string): void
+	/** The Ring tempts player p (choose a Ring-bearer, the Ring grows, "whenever the Ring tempts you" triggers). */
+	tempt(ctx: Ctx, p: number, key: string): void
 }
 
 let hooks: EngineHooks
@@ -220,6 +222,28 @@ export function runCompiled(ctx: Ctx, item: StackItem, compiled: Compiled, keyPr
 				break
 			case 'bounce':
 				for (const p of tperms(e.t)) H().move(s, p.iid, 'hand')
+				break
+			case 'tempt':
+				H().tempt(ctx, me, k)
+				break
+			case 'amass': {
+				// put N +1/+1 counters on an Army you control; if you have none, make a 0/0 Army first
+				const kind = e.kind.replace(/s$/, '')
+				let army = s.battlefield.find((p) => p.controller === me && rulesOf(s, p).subtypes.includes('Army'))
+				if (!army) {
+					const card = H().makeTokenDef(s, { e: 'token', n: 1, name: `${kind} Army`, power: 0, toughness: 0, types: `Creature — ${kind} Army`, colors: ['B'], keywords: [] }, 0)
+					const [iid] = H().createToken(s, me, card, 1)
+					army = s.battlefield.find((p) => p.iid === iid)
+				}
+				if (army) {
+					army.counters['+1/+1'] = (army.counters['+1/+1'] ?? 0) + e.n
+					log(s, `${s.players[me].name} amasses ${e.kind} ${e.n}.`)
+				}
+				break
+			}
+			case 'monarch':
+				if (s.monarch !== me) log(s, `${s.players[me].name} becomes the monarch.`)
+				s.monarch = me
 				break
 			case 'tuck':
 				for (const p of tperms(e.t)) {
