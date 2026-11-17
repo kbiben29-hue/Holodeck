@@ -68,7 +68,13 @@ function readLayout(): LayoutChoice {
 }
 /** Phones get the touch layout; tablets get it held upright and the table held sideways; computers the table, scaled to fit (all can be switched in the menu). */
 /** A finger-driven screen (or ?touch=1 to try the touch sizing with a mouse). */
-const isTouch = () => typeof window !== 'undefined' && (!!window.matchMedia?.('(pointer: coarse)').matches || /[?&]touch=1/.test(window.location.search))
+const isTouch = () =>
+	typeof window !== 'undefined' &&
+	(!!window.matchMedia?.('(pointer: coarse)').matches ||
+		// an iPad with a keyboard or trackpad attached still reports a fine pointer (and a Mac user agent)
+		(navigator.maxTouchPoints > 1 && !!window.matchMedia?.('(any-pointer: coarse)').matches) ||
+		(navigator.maxTouchPoints > 1 && /Macintosh/.test(navigator.userAgent)) ||
+		/[?&]touch=1/.test(window.location.search))
 if (typeof document !== 'undefined' && isTouch()) document.documentElement.classList.add('touch')
 /** A touch screen at least 600px each way (iPad, Android tablets). */
 const isTablet = () => isTouch() && Math.min(window.innerWidth, window.innerHeight) >= 600
@@ -83,7 +89,7 @@ function safeInsets() {
 	d.remove()
 	return v
 }
-const isPhone = () => typeof window !== 'undefined' && !!window.matchMedia?.('(pointer: coarse)').matches && Math.min(window.innerWidth, window.innerHeight) < 600
+const isPhone = () => typeof window !== 'undefined' && isTouch() && Math.min(window.innerWidth, window.innerHeight) < 600
 
 function useFit() {
 	const [fit, setFit] = useState({ scale: 1, left: 0, top: 0, width: W })

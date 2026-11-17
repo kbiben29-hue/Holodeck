@@ -64,7 +64,9 @@ npm run build
   Borg), then an LCARS-style report; Middle-earth decks get sunrise (win) / darkness falls (lose) and a parchment report; Bloomburrow decks a firefly meadow (win) / thunderstorm (lose) and a storybook report. Canvas + synthesized sounds (`sfx.warp/redAlert/breach/assimilated`).
 - `src/ui/Board.tsx` — console (1600×1000 scaled; narrower, down to 1360, on squarer screens: `useFit` sets `--stage-w`) and
   pocket (phone) layouts. Console cards are big (creatures 126×176, other permanents 98×137, hand 150×209 peeking up from
-  the bottom) and battlefield rows shrink their cards only when full (`fit` in `field`); `src/App.tsx` — sessions,
+  the bottom) and battlefield rows shrink their cards only when full (`fit` in `field`). Touch layout (`pocket`: phones,
+  iPad upright): `phone` / `phone-wide` (sideways: fields left, controls right, CSS grid) / `tablet`; each battlefield is
+  measured (`fieldBox`) and its cards sized to fill it. Touch detection includes iPads with a trackpad (`isTouch` in App); `src/App.tsx` — sessions,
   autosave, undo, bot loop, online host/guest. `src/config.ts` — repo/play URL.
 
 ## Hard rules

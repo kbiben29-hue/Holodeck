@@ -3400,3 +3400,132 @@ html[data-world='bb'] .viewport {
 	color: #5f7a48;
 	font-family: Georgia, serif;
 }
+
+/* ═══════════ phones and iPad upright: the touch table ═══════════ */
+.pocket .row {
+	flex: none;
+}
+.pocket .pbar .pname {
+	white-space: nowrap;
+	overflow: hidden;
+	text-overflow: ellipsis;
+	max-width: 38vw;
+	display: block;
+	line-height: 40px;
+	flex: none;
+}
+.pocket.tablet .pbar .pname {
+	line-height: 54px;
+	max-width: 30vw;
+}
+.pocket .pbar .life,
+.pocket .pbar .zones,
+.pocket .pbar .pool {
+	flex: none;
+}
+.pocket .p-mybar,
+.pocket .p-hand {
+	min-width: 0;
+}
+/* phones held upright: a bigger hand, fanned a little so more fits */
+.pocket.phone .hand .cardface {
+	--card-w: 72px;
+	--card-h: 100px;
+}
+.pocket.phone .hand .cardface + .cardface {
+	margin-left: -6px;
+}
+.pocket.phone .ptext {
+	font-size: 14px;
+}
+.pocket.phone .pbtns button {
+	min-height: 40px;
+	padding: 8px 14px;
+	font-size: 14px;
+}
+
+/* phones held sideways: the two battlefields side by side with the controls in a column on the right */
+.pocket.phone-wide {
+	display: grid;
+	grid-template-columns: minmax(0, 1fr) minmax(190px, 30%);
+	grid-template-rows: auto minmax(0, 1fr) minmax(0, 1fr) auto;
+	grid-template-areas:
+		'them top'
+		'them mid'
+		'me mid'
+		'hand mybar';
+	padding: env(safe-area-inset-top) max(4px, env(safe-area-inset-right)) env(safe-area-inset-bottom) max(4px, env(safe-area-inset-left));
+	column-gap: 6px;
+	row-gap: 4px;
+}
+.pocket.phone-wide > .p-top {
+	grid-area: top;
+}
+.pocket.phone-wide > .p-field.them {
+	grid-area: them;
+}
+.pocket.phone-wide > .p-field.me {
+	grid-area: me;
+}
+.pocket.phone-wide > .p-mid {
+	grid-area: mid;
+	overflow-y: auto;
+	align-self: stretch;
+	justify-content: center;
+}
+.pocket.phone-wide > .p-dock {
+	display: contents;
+}
+.pocket.phone-wide .p-mybar {
+	grid-area: mybar;
+	align-self: end;
+}
+.pocket.phone-wide .p-hand {
+	grid-area: hand;
+}
+.pocket.phone-wide .pbar {
+	height: 36px;
+}
+.pocket.phone-wide .pbar .pname {
+	line-height: 36px;
+	max-width: 22vw;
+	font-size: 13px;
+}
+.pocket.phone-wide .pbar .zones .zone:not([data-anchor^='hand']) {
+	display: none;
+}
+.pocket.phone-wide .phases {
+	flex-wrap: wrap;
+	gap: 3px;
+}
+.pocket.phone-wide .prompt {
+	flex-direction: column;
+	align-items: stretch;
+	padding: 6px;
+	border-left-width: 4px;
+}
+.pocket.phone-wide .ptext {
+	min-width: 0;
+	font-size: 13px;
+}
+.pocket.phone-wide .pbtns {
+	display: flex;
+	flex-wrap: wrap;
+	gap: 4px;
+}
+.pocket.phone-wide .pbtns button {
+	flex: 1 1 auto;
+	min-height: 36px;
+	font-size: 13px;
+	padding: 6px 8px;
+}
+.pocket.phone-wide .hand .cardface {
+	--card-w: 54px;
+	--card-h: 75px;
+}
+.pocket.phone-wide .hand {
+	padding: 0 2px;
+}
+.pocket.phone-wide .p-hand {
+	padding-bottom: 3px;
+}

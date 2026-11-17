@@ -88,6 +88,25 @@ export function Board(props: BoardProps) {
 		ro.observe(b)
 		return () => ro.disconnect()
 	}, [layout])
+	// touch layout: measure each battlefield so its cards can be as big as it allows (phones, iPad upright)
+	const [fieldBox, setFieldBox] = useState<Record<string, { w: number; h: number }>>({})
+	const [landscape, setLandscape] = useState(() => typeof window !== 'undefined' && window.innerWidth > window.innerHeight)
+	useEffect(() => {
+		const b = boardRef.current
+		if (!b || layout !== 'pocket') return
+		const go = () => {
+			const next: Record<string, { w: number; h: number }> = {}
+			b.querySelectorAll<HTMLElement>('.p-field').forEach((f) => (next[f.classList.contains('me') ? 'me' : 'them'] = { w: f.clientWidth, h: f.clientHeight }))
+			setFieldBox((old) => (JSON.stringify(old) === JSON.stringify(next) ? old : next))
+			setLandscape(window.innerWidth > window.innerHeight)
+		}
+		go()
+		const ro = new ResizeObserver(go)
+		b.querySelectorAll('.p-field').forEach((f) => ro.observe(f))
+		ro.observe(b)
+		window.addEventListener('orientationchange', go)
+		return () => (ro.disconnect(), window.removeEventListener('orientationchange', go))
+	}, [layout])
 	useMotion(boardRef, s)
 	/** Card enlarged beside the mouse pointer (stage coordinates on the table, screen coordinates on touch). */
 	const [zoom, setZoom] = useState<{ iid: number; x: number; y: number } | null>(null)
@@ -634,17 +653,31 @@ export function Board(props: BoardProps) {
 		const other = mine.filter((x) => !lands.includes(x) && !creatures.includes(x))
 		const groups = groupLands(s, lands)
 		// console: cards are as big as the row allows, shrinking only when the row fills up
+		// touch layout: the creature row gets ~56% of the battlefield's height and the other row the rest, then both
+		// shrink (never below 55%) when they run out of width
+		const box = layout === 'pocket' ? fieldBox[p === me ? 'me' : 'them'] : undefined
+		const cap = props.tablet ? 230 : 150
+		const ch = box ? Math.max(48, Math.min(cap, Math.floor(box.h * 0.56) - 10)) : 0
+		const lh = box ? Math.max(42, Math.min(cap * 0.8, Math.floor(box.h * 0.44) - 10)) : 0
 		const fit = (items: Perm[], w: number, h: number, gap: number, extra = 0): CSSProperties | undefined => {
+			if (layout === 'pocket') {
+				if (!box) return undefined
+				const pg = props.tablet ? 8 : 4
+				const need = items.reduce((n, x) => n + (x.tapped ? h : w) + pg, extra / 3)
+				const k = Math.max(props.tablet ? 0.55 : 0.45, Math.min(1, (box.w - 12) / Math.max(1, need)))
+				return { ['--card-w' as string]: `${Math.round(w * k)}px`, ['--card-h' as string]: `${Math.round(h * k)}px`, minHeight: Math.round(h + 4), height: Math.round(h + 4) }
+			}
 			if (layout !== 'console') return undefined
 			const need = items.reduce((n, x) => n + (x.tapped ? h : w) + gap, extra)
 			const k = Math.max(0.55, Math.min(1, (FIELD_W - (1600 - stageW)) / Math.max(1, need)))
 			return { ['--card-w' as string]: `${Math.round(w * k)}px`, ['--card-h' as string]: `${Math.round(h * k)}px` }
 		}
+		const [cw, chh, lw, lhh] = layout === 'pocket' ? [Math.round(ch * 0.716), ch, Math.round(lh * 0.716), lh] : [CREATURE_W, CREATURE_H, LOWER_W, LOWER_H]
 		const lowerItems = [...groups.map((g) => g.find((x) => !x.tapped) ?? g[0]), ...other]
 		return (
 			<>
-				<div className="row creatures" style={fit(creatures, CREATURE_W, CREATURE_H, 8)}>{creatures.length ? creatures.map((x) => permView(x, size)) : <span className="empty">no creatures</span>}</div>
-				<div className="row lower" style={fit(lowerItems, LOWER_W, LOWER_H, 8, 24 + groups.filter((g) => g.length > 1).length * 10)}>
+				<div className="row creatures" style={fit(creatures, cw, chh, 8)}>{creatures.length ? creatures.map((x) => permView(x, size)) : <span className="empty">no creatures</span>}</div>
+				<div className="row lower" style={fit(lowerItems, lw, lhh, 8, 24 + groups.filter((g) => g.length > 1).length * 10)}>
 					<div className="lands">{groups.map((g) => landGroup(g, size))}</div>
 					<div className="others">{other.map((x) => permView(x, size))}</div>
 				</div>
@@ -973,7 +1006,7 @@ export function Board(props: BoardProps) {
 
 	if (layout === 'pocket')
 		return (
-			<div className={`pocket ${props.tablet ? 'tablet' : ''} world-${worldRef.current}`} ref={boardRef} onClick={() => setHover(null)} onPointerDown={unlockAudio} {...touchHandlers}>
+			<div className={`pocket ${props.tablet ? 'tablet' : landscape ? 'phone-wide' : 'phone'} world-${worldRef.current}`} ref={boardRef} onClick={() => setHover(null)} onPointerDown={unlockAudio} {...touchHandlers}>
 				<TableFx world={worldRef.current} on={props.pace !== 'off'} />
 				{zoom && locateAny(s, zoom.iid) && !(props.hideHand && s.players[me].hand.some((o) => o.iid === zoom.iid)) && (
 					<div className="zoom zoom-side" style={{ left: zoom.x, top: zoom.y }}>
@@ -1013,8 +1046,8 @@ export function Board(props: BoardProps) {
 				</div>
 				<div className="p-field me" data-drop="play">{field(me, 's')}</div>
 				<div className="p-dock">
-					{playerBar(me)}
-					{handView('s')}
+					<div className="p-mybar">{playerBar(me)}</div>
+					<div className="p-hand">{handView('s')}</div>
 				</div>
 				{sheet && selected && (
 					<div className="sheet-float">
