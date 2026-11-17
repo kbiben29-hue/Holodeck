@@ -3,6 +3,7 @@ import { abilityProblem, canAttack, canBlock, canCast, canPlayLand, commanderTax
 import { costText } from '../engine/mana'
 import { flyFrom, useMotion } from './motion'
 import { playerWorld, worldOf, type World } from './world'
+import { TableFx } from './TableFx'
 import { NAMED } from '../engine/named'
 import type { Pace } from './prefs'
 import { Arrows } from './Arrows'
@@ -11,7 +12,7 @@ import { cardName, def, findPerm, isCreature, keywords, opp, permName, pt, rules
 import type { CardDef, GameState, Intent, Mana, ManualOp, Obj, Perm, Step } from '../engine/types'
 import { CardBack, CardFaceView, Cost, Pip } from './Card'
 import type { Hint } from './coach'
-import { bigBlast, isMuted, setMuted, soundFor, unlockAudio } from './sfx'
+import { bigBlast, isMuted, setAmbience, setMuted, soundFor, unlockAudio } from './sfx'
 
 export type LayoutChoice = 'auto' | 'console' | 'pocket'
 
@@ -274,21 +275,24 @@ export function Board(props: BoardProps) {
 		}
 		const finish = (ev: globalThis.PointerEvent) => {
 			const g = ghost
-			cleanup()
+			cleanup(true)
 			if (!g || !start) return
 			swallowClick.current = true
 			window.setTimeout(() => (swallowClick.current = false), 400)
 			const where = targetAt(ev.clientX, ev.clientY)?.dataset.drop
 			const isLand = rulesOf(s, o).types.includes('land')
 			let done = false
+			// the ghost stays put until the card's real element appears there (motion.ts removes it), so the card
+			// never blinks back into the hand or shows twice
 			if (where === 'play') {
-				flyFrom(o.iid, g.getBoundingClientRect())
+				flyFrom(o.iid, g.getBoundingClientRect(), g)
 				done = isLand ? act({ type: 'playLand', player: me, iid: o.iid }) : act({ type: 'cast', player: me, iid: o.iid })
 			} else if ((where === 'graveyard' || where === 'exile') && from === 'hand') {
-				flyFrom(o.iid, g.getBoundingClientRect())
+				flyFrom(o.iid, g.getBoundingClientRect(), g)
 				done = tool({ op: 'move', iid: o.iid, to: where, player: me })
 			}
-			if (done) return g.remove()
+			if (done) return
+			src.classList.remove('drag-source')
 			// back where it came from
 			const r = g.getBoundingClientRect()
 			const back = src.getBoundingClientRect()
@@ -301,12 +305,12 @@ export function Board(props: BoardProps) {
 			ghost?.remove()
 			cleanup()
 		}
-		const cleanup = () => {
+		const cleanup = (keepSource = false) => {
 			window.removeEventListener('pointermove', move)
 			window.removeEventListener('pointerup', finish)
 			window.removeEventListener('pointercancel', cancel)
 			hot?.classList.remove('drop-hot')
-			src.classList.remove('drag-source')
+			if (!keepSource) src.classList.remove('drag-source')
 			root.classList.remove('dragging')
 			dragging.current = false
 		}
@@ -353,6 +357,17 @@ export function Board(props: BoardProps) {
 	const logLen = useRef(s.log.length)
 	const worldRef = useRef<World>('trek')
 	worldRef.current = useMemo(() => playerWorld(s, me), [s.players[me].commanders.join(), me, s.cards])
+	// a quiet bed of nature sounds under a Bloomburrow game (stops at the end and when you leave)
+	const over = s.pending.kind === 'over'
+	useEffect(() => {
+		setAmbience(over || muted ? null : worldRef.current)
+	}, [worldRef.current, over, muted])
+	useEffect(() => () => setAmbience(null), [])
+	// the page behind the table takes on the world too
+	useEffect(() => {
+		document.documentElement.dataset.world = worldRef.current
+		return () => void delete document.documentElement.dataset.world
+	}, [worldRef.current])
 	useEffect(() => {
 		const fresh = s.log.slice(logLen.current)
 		logLen.current = s.log.length
@@ -557,7 +572,8 @@ export function Board(props: BoardProps) {
 						sel?.iid === p.iid ? 'sel' : '',
 						att || pendingAtt ? 'attacking' : '',
 						blk || pendingBlk ? 'blocking' : '',
-						candidate ? 'candidate' : '',
+						candidate ? `candidate ${pend.kind === 'attackers' ? 'can-attack' : 'can-block'}` : '',
+						!candidate && usable(s, me, p) ? 'usable' : '',
 						blockTarget || boardPick(p.iid) ? 'target' : '',
 						hPerm.has(p.iid) ? 'hint' : '',
 						attachFrom !== null ? 'target' : '',
@@ -797,6 +813,14 @@ export function Board(props: BoardProps) {
 						))}
 					</span>
 				)}
+				{isMe && layout === 'console' && (
+					<span className="glow-key" title="What the glow around a card means">
+						<span><i style={{ background: '#4dff9a' }} />play</span>
+						<span><i style={{ background: '#4fe3ff' }} />ability</span>
+						<span><i style={{ background: '#ff8a3a' }} />attack</span>
+						<span><i style={{ background: '#6aa8ff' }} />block</span>
+					</span>
+				)}
 				{poolTotal > 0 && (
 					<span className="pool" title="Mana pool">
 						{MANA.filter((m) => pl.pool[m] > 0).map((m) => (
@@ -949,7 +973,8 @@ export function Board(props: BoardProps) {
 
 	if (layout === 'pocket')
 		return (
-			<div className={`pocket ${props.tablet ? 'tablet' : ''}`} ref={boardRef} onClick={() => setHover(null)} onPointerDown={unlockAudio} {...touchHandlers}>
+			<div className={`pocket ${props.tablet ? 'tablet' : ''} world-${worldRef.current}`} ref={boardRef} onClick={() => setHover(null)} onPointerDown={unlockAudio} {...touchHandlers}>
+				<TableFx world={worldRef.current} on={props.pace !== 'off'} />
 				{zoom && locateAny(s, zoom.iid) && !(props.hideHand && s.players[me].hand.some((o) => o.iid === zoom.iid)) && (
 					<div className="zoom zoom-side" style={{ left: zoom.x, top: zoom.y }}>
 						<CardFaceView def={def(s, locateAny(s, zoom.iid)!.obj.card)} back={(locateAny(s, zoom.iid)!.obj as Perm).flipped} className="big" />
@@ -1011,7 +1036,8 @@ export function Board(props: BoardProps) {
 		)
 
 	return (
-		<div className="board" ref={boardRef} onMouseLeave={() => (setHover(null), setZoom(null))} onPointerDown={unlockAudio} {...touchHandlers}>
+		<div className={`board world-${worldRef.current}`} ref={boardRef} onMouseLeave={() => (setHover(null), setZoom(null))} onPointerDown={unlockAudio} {...touchHandlers}>
+			<TableFx world={worldRef.current} on={props.pace !== 'off'} />
 			{zoom && locateAny(s, zoom.iid) && !(props.hideHand && s.players[me].hand.some((o) => o.iid === zoom.iid)) && (
 				<div className="zoom" style={{ left: zoom.x, top: zoom.y }}>
 					<CardFaceView def={def(s, locateAny(s, zoom.iid)!.obj.card)} back={(locateAny(s, zoom.iid)!.obj as Perm).flipped} className="big" />
@@ -1107,6 +1133,12 @@ function groupLands(s: GameState, lands: Perm[]): Perm[][] {
 		groups.set(k, [...(groups.get(k) ?? []), l])
 	}
 	return [...groups.values()]
+}
+
+/** One of my permanents with an ability I could activate right now (not counting mana abilities). */
+function usable(s: GameState, me: number, p: Perm): boolean {
+	if (s.pending.kind !== 'priority' || s.pending.player !== me || p.controller !== me) return false
+	return rulesOf(s, p).activated.some((a) => !a.fromGraveyard && !abilityProblem(s, me, p, a))
 }
 
 function playable(s: GameState, me: number, o: Obj): boolean {

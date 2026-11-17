@@ -32,3 +32,21 @@ From **Kenney's audio packs** (Casino, Interface, RPG and Impact sounds — CC0,
 
 No music, and nothing taken from any film or TV show: the "phaser", "torpedo", "transporter", sword, arrow, horn
 and magic moments use these generic sounds plus effects synthesized live in `src/ui/sfx.ts`.
+
+## Bloomburrow nature recordings (`bb_*.mp3`)
+
+All CC0 1.0 (public domain), from Freesound, as collected and licence-checked in
+[Asion001/mangarr-sounds](https://github.com/Asion001/mangarr-sounds) (its CREDITS.md links each source page).
+Trimmed, levelled and converted to mono mp3 here.
+
+| File | Recording | Author |
+|---|---|---|
+| bb_forest.mp3 | sfx amb forest spring afternoon-01 | bajko |
+| bb_stream.mp3 | Relaxing, Mountains, Rivers, Streams, Running Water | INNORECORDS |
+| bb_crickets.mp3 | Night Crickets Back Porch | hdfreema |
+| bb_chirp.mp3 | Bird Chirp | swiftoid |
+| bb_birds.mp3 | Birds Chirping 02 | swiftoid |
+| bb_owl.mp3 | Owl Hoot | Breviceps |
+| bb_splash.mp3 | Stream River Water Up Close | jackthemurray |
+| bb_thunder.mp3 | thunder | netaj |
+| bb_rain.mp3 | Rain and Thunder 4 | FlatHill |

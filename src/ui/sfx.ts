@@ -14,6 +14,11 @@ let muted = (() => {
 export const isMuted = () => muted
 export function setMuted(m: boolean) {
 	muted = m
+	if (m) {
+		// silence the background bed now; it comes back with the next game screen render
+		bedStop?.()
+		bedStop = null
+	}
 	try {
 		localStorage.setItem('holodeck.muted', m ? '1' : '0')
 	} catch {
@@ -51,7 +56,9 @@ const SAMPLES = ['phaser1', 'phaser2', 'phaser3', 'disruptor1', 'disruptor2', 'd
 	// table sounds (Kenney Casino + Interface, CC0)
 	'place1', 'place2', 'place3', 'place4', 'slide1', 'slide2', 'slide3', 'shuffle', 'click',
 	// Middle-earth (Kenney RPG + Impact, CC0)
-	'sword_draw1', 'sword_draw2', 'slash1', 'slash2', 'chop', 'clash1', 'clash2', 'shieldhit', 'punch', 'wood', 'bell', 'hoof1', 'hoof2', 'coins', 'page', 'creak', 'cloth', 'latch'] as const
+	'sword_draw1', 'sword_draw2', 'slash1', 'slash2', 'chop', 'clash1', 'clash2', 'shieldhit', 'punch', 'wood', 'bell', 'hoof1', 'hoof2', 'coins', 'page', 'creak', 'cloth', 'latch',
+	// Bloomburrow nature recordings (CC0, from Freesound via mangarr-sounds; see public/sfx/README.md)
+	'bb_forest', 'bb_stream', 'bb_crickets', 'bb_chirp', 'bb_birds', 'bb_owl', 'bb_splash', 'bb_thunder', 'bb_rain'] as const
 type Sample = (typeof SAMPLES)[number]
 const buffers = new Map<string, AudioBuffer>()
 let loadStarted = false
@@ -70,6 +77,79 @@ function loadSamples(a: AudioContext) {
 				/* synthesized sounds stand in */
 			})
 	}
+}
+
+// ───────── ambience: a quiet bed of real nature sounds under a Bloomburrow game ─────────
+
+type Bed = { name: Sample; vol: number }
+const BEDS: Partial<Record<string, Bed[]>> = {
+	bb: [
+		{ name: 'bb_forest', vol: 0.32 },
+		{ name: 'bb_stream', vol: 0.14 },
+	],
+}
+let bedWorld: string | null = null
+let bedStop: (() => void) | null = null
+let bedRetry = 0
+
+/** Loop a recording forever with a soft crossfade at the seam; returns a function that fades it out. */
+function loopBed(a: AudioContext, bed: Bed): () => void {
+	const buf = buffers.get(bed.name)!
+	const out = a.createGain()
+	out.gain.setValueAtTime(0.0001, a.currentTime)
+	out.gain.exponentialRampToValueAtTime(bed.vol, a.currentTime + 2.5)
+	out.connect(master!)
+	const fade = Math.min(3, buf.duration / 4)
+	let timer = 0
+	let alive = true
+	const play = (at: number) => {
+		if (!alive) return
+		const src = a.createBufferSource()
+		src.buffer = buf
+		const g = a.createGain()
+		g.gain.setValueAtTime(0.0001, at)
+		g.gain.linearRampToValueAtTime(1, at + fade)
+		g.gain.setValueAtTime(1, at + buf.duration - fade)
+		g.gain.linearRampToValueAtTime(0.0001, at + buf.duration)
+		src.connect(g).connect(out)
+		src.start(at)
+		src.stop(at + buf.duration + 0.05)
+		const next = at + buf.duration - fade
+		timer = window.setTimeout(() => play(next), Math.max(0, (next - a.currentTime - 1) * 1000))
+	}
+	play(a.currentTime + 0.05)
+	return () => {
+		alive = false
+		window.clearTimeout(timer)
+		const now = a.currentTime
+		out.gain.cancelScheduledValues(now)
+		out.gain.setValueAtTime(Math.max(0.0001, out.gain.value), now)
+		out.gain.exponentialRampToValueAtTime(0.0001, now + 1.2)
+		window.setTimeout(() => out.disconnect(), 1500)
+	}
+}
+
+/** Start (or change, or stop with null) the background sounds for a world. Only Bloomburrow has one. */
+export function setAmbience(world: string | null) {
+	if (world === bedWorld && (bedStop || !world)) return
+	bedStop?.()
+	bedStop = null
+	bedWorld = world
+	window.clearTimeout(bedRetry)
+	const beds = world ? BEDS[world] : undefined
+	if (!beds) return
+	const a = ac()
+	if (!a || !master) return
+	// the recordings load after the first click; try again shortly if they aren't in yet
+	if (!beds.every((b) => buffers.has(b.name))) {
+		bedRetry = window.setTimeout(() => {
+			bedWorld = null
+			setAmbience(world)
+		}, 700)
+		return
+	}
+	const stops = beds.map((b) => loopBed(a, b))
+	bedStop = () => stops.forEach((f) => f())
 }
 
 /** Play one of the recorded effects (a random one of several takes); false if it isn't loaded. */
@@ -249,6 +329,7 @@ export const sfx = {
 	// ── Bloomburrow critters ──
 	/** A bird's two quick chirps. */
 	chirp() {
+		if (sample(['bb_chirp', 'bb_birds'], { vol: 0.55 })) return
 		tone(2400, 0.07, { type: 'sine', vol: 0.09, to: 3600 })
 		tone(2600, 0.08, { type: 'sine', at: 0.1, vol: 0.08, to: 4000 })
 	},
@@ -262,6 +343,7 @@ export const sfx = {
 	},
 	/** An otter's splash. */
 	splash() {
+		if (sample('bb_splash', { vol: 0.7 })) return
 		noise(0.35, { band: 900, sweepTo: 3000, vol: 0.22, q: 0.8 })
 		for (let i = 0; i < 4; i++) tone(700 + i * 260, 0.05, { type: 'sine', at: 0.08 + i * 0.05, vol: 0.05, to: 1400 + i * 300 })
 	},
@@ -275,6 +357,8 @@ export const sfx = {
 	},
 	/** Bloomburrow victory: a cheerful little fanfare with birdsong. */
 	meadow() {
+		sample('bb_birds', { at: 0.6, vol: 0.6 })
+		sample('bb_crickets', { at: 0.2, vol: 0.5 })
 		;[523, 659, 784, 1046, 1318].forEach((f, i) => tone(f, 0.35, { type: 'triangle', at: i * 0.12, vol: 0.07, filter: 3000 }))
 		for (let i = 0; i < 4; i++) {
 			tone(2400 + i * 200, 0.07, { type: 'sine', at: 0.9 + i * 0.35, vol: 0.06, to: 3600 })
@@ -284,6 +368,10 @@ export const sfx = {
 	},
 	/** Bloomburrow defeat: wind, rain and a roll of thunder. */
 	storm() {
+		if (sample('bb_rain', { vol: 0.8 })) {
+			sample('bb_thunder', { at: 1.15, vol: 0.9 })
+			return
+		}
 		noise(3, { band: 2500, vol: 0.12, q: 0.4 })
 		noise(2.4, { band: 400, sweepTo: 200, vol: 0.12, q: 0.6, at: 0.3 })
 		if (!sample('bigboom2', { at: 1.2, vol: 0.55, rate: 0.6 })) noise(1.2, { band: 120, vol: 0.3, at: 1.2 })
@@ -380,7 +468,7 @@ function bbWeapon(src: Card | undefined) {
 	const hit = (vol = 0.5) => sample(['slash1', 'slash2'], { at: 0.12, vol, rate: 1.35 })
 	if (/Lizard|Dragon/.test(t)) return () => sfx.fire()
 	if (/Bird/.test(t)) return () => (sfx.flutter(), sfx.chirp(), hit(0.35))
-	if (/Bat/.test(t)) return () => (sfx.flutter(), sfx.squeak(), hit(0.35))
+	if (/Bat/.test(t)) return () => (sfx.flutter(), sample('bb_owl', { vol: 0.5 }) || sfx.squeak(), hit(0.35))
 	if (/Mouse|Squirrel|Rat|Hamster/.test(t)) return () => (sfx.squeak(), hit())
 	if (/Frog|Toad/.test(t)) return () => (sfx.croak(), sample('punch', { at: 0.15, vol: 0.4, rate: 1.6 }))
 	if (/Otter|Fish|Octopus/.test(t)) return () => sfx.splash()
@@ -450,6 +538,7 @@ export function soundFor(line: string, find: Lookup = () => undefined, worldOf: 
 		if (worldOf(m[1]) !== 'trek' && /Equipment/.test(c?.typeLine ?? '')) return { key: 'enter', play: () => (sfx.place(), sample('latch', { at: 0.12, vol: 0.4 })) }
 		return { key: 'enter', play: () => sfx.place() }
 	}
+	if ((m = line.match(/^(.+?) plays /)) && worldOf(m[1]) === 'bb') return { key: 'land', play: () => (sfx.place(), sample('cloth', { at: 0.05, vol: 0.35, rate: 1.3 })) }
 	if (/ plays /.test(line)) return { key: 'land', play: () => sfx.place() }
 	if ((m = line.match(/ creates .*?(Treasure|Food|Clue)?(?: token)/))) {
 		if (/Treasure/.test(line)) return { key: 'token', play: () => (sfx.place(), sample('coins', { at: 0.05, vol: 0.45 })) }

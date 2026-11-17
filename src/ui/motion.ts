@@ -19,8 +19,23 @@ const reduced = () => typeof matchMedia === 'function' && matchMedia('(prefers-r
 let enabled = true
 /** A card dropped by hand: its next move starts from where it was let go (not where it sat before). */
 const origins = new Map<number, DOMRect>()
-export function flyFrom(iid: number, rect: DOMRect) {
+/** Drag ghosts waiting for the card's real element to take over (removed on the next motion pass). */
+const handoffs = new Map<HTMLElement, number>()
+export function flyFrom(iid: number, rect: DOMRect, ghost?: HTMLElement) {
 	origins.set(iid, rect)
+	if (ghost) {
+		handoffs.set(ghost, iid)
+		// in case nothing renders (the move was refused)
+		window.setTimeout(() => (ghost.remove(), handoffs.delete(ghost)), 1200)
+	}
+}
+const MOTION = 'motion'
+/** Start one of our animations on an element, replacing any move it was already making. */
+function fly(el: Element, frames: Keyframe[], opts: KeyframeAnimationOptions) {
+	for (const a of el.getAnimations()) if (a.id === MOTION) a.cancel()
+	const anim = el.animate(frames, opts)
+	anim.id = MOTION
+	return anim
 }
 export function setMotion(on: boolean) {
 	enabled = on
@@ -43,12 +58,51 @@ export function useMotion(root: RefObject<HTMLElement | null>, s: GameState) {
 		const hr = host.getBoundingClientRect()
 		const k = host.offsetWidth ? hr.width / host.offsetWidth : 1
 		const seen = new Map<number, Seen>()
+		/** Where cards still flying are on screen right now (their layout place is measured without the flight). */
+		const inFlight = new Map<number, DOMRect>()
 		host.querySelectorAll<HTMLElement>('[data-iid]').forEach((el) => {
 			const iid = Number(el.dataset.iid)
+			if (seen.has(iid)) return
 			// measure the card itself (a stack entry also holds text; a permanent its attachments)
 			const face = el.matches('.cardface') ? el : (el.querySelector('.cardface') ?? el)
-			if (!seen.has(iid)) seen.set(iid, { rect: face.getBoundingClientRect(), el })
+			const flying = el.getAnimations().filter((a) => a.id === MOTION && a.playState !== 'finished' && a.effect instanceof KeyframeEffect)
+			if (flying.length) {
+				inFlight.set(iid, face.getBoundingClientRect())
+				// take the flight off for a moment to measure where the card really sits (no paint happens in between)
+				for (const a of flying) (a.effect as KeyframeEffect).target = null
+				seen.set(iid, { rect: face.getBoundingClientRect(), el })
+				for (const a of flying) (a.effect as KeyframeEffect).target = el
+			} else seen.set(iid, { rect: face.getBoundingClientRect(), el })
 		})
+		// the dragged card's stand-in: on the battlefield the real card takes over from the same spot (below), so it just
+		// goes; a spell shrinks into its place on the stack (or a pile) and fades there
+		// (only once the move has happened: a render with the same state keeps it waiting)
+		const moved = !prev.current || prev.current.s !== s
+		/** Cards whose dragged stand-in makes the trip itself. */
+		const handed = new Set<number>()
+		for (const [g, iid] of moved ? handoffs : []) {
+			// go by what's on screen (a frame being played back may still show the spell on the stack)
+			const el = seen.get(iid)?.el
+			const z = zoneOf(s, iid)
+			const to = el ? seen.get(iid)!.rect : (host.querySelector(`[data-anchor="${z.zone}-${z.owner}"]`)?.getBoundingClientRect() ?? null)
+			if (el?.classList.contains('perm') || !enabled || reduced()) {
+				g.remove()
+				continue
+			}
+			if (!to) {
+				// nowhere to go yet (say, choosing X or targets first): fade where it was let go
+				g.animate([{ opacity: 1 }, { opacity: 0, scale: '0.9' }], { duration: 220, fill: 'forwards' }).onfinish = () => g.remove()
+				continue
+			}
+			origins.delete(iid)
+			handed.add(iid)
+			const r = g.getBoundingClientRect()
+			const a = center(r)
+			const b = center(to)
+			const anim = g.animate([{ translate: '0 0', scale: '1', opacity: 1 }, { translate: `${(b.x - a.x) / k}px ${(b.y - a.y) / k}px`, scale: String(r.width ? Math.max(0.15, to.width / r.width) : 0.3), opacity: 0 }], { duration: 300, easing: 'cubic-bezier(.4,0,.6,1)', fill: 'forwards' })
+			anim.onfinish = () => g.remove()
+		}
+		if (moved) handoffs.clear()
 		const life = s.players.map((p) => p.life)
 		const dmg = new Map(s.battlefield.map((p) => [p.iid, p.damage]))
 		const plus = new Map(s.battlefield.map((p) => [p.iid, p.counters['+1/+1'] ?? 0]))
@@ -96,8 +150,13 @@ export function useMotion(root: RefObject<HTMLElement | null>, s: GameState) {
 		const dropped = new Map(origins)
 		origins.clear()
 		for (const [iid, now] of seen) {
+			if (handed.has(iid)) continue
 			const from = dropped.get(iid)
-			const was = from ? { rect: from, el: now.el } : before.seen.get(iid)
+			const prevSeen = before.seen.get(iid)
+			// still flying and its place hasn't changed: let it land
+			if (!from && prevSeen && inFlight.has(iid) && prevSeen.el === now.el && Math.abs(prevSeen.rect.left - now.rect.left) + Math.abs(prevSeen.rect.top - now.rect.top) < 2) continue
+			// a card in mid-flight that's been sent somewhere new carries on from where it is on screen
+			const was = from ? { rect: from, el: now.el } : prevSeen && inFlight.has(iid) && prevSeen.el === now.el ? { rect: inFlight.get(iid)!, el: now.el } : prevSeen
 			const z0 = zoneOf(before.s, iid)
 			const z1 = zoneOf(s, iid)
 			if (was) {
@@ -106,8 +165,10 @@ export function useMotion(root: RefObject<HTMLElement | null>, s: GameState) {
 				const dx = (a.x - b.x) / k
 				const dy = (a.y - b.y) / k
 				if (Math.abs(dx) + Math.abs(dy) < 3 || lungers.has(iid)) continue
-				const sc = was.rect.width && now.rect.width ? was.rect.width / now.rect.width : 1
-				now.el.animate([{ translate: `${dx}px ${dy}px`, scale: String(sc) }, { translate: '0 0', scale: '1' }], { duration: z0.zone === z1.zone ? 260 : 420, easing: 'cubic-bezier(.2,.8,.2,1)' })
+				let sc = was.rect.width && now.rect.width ? was.rect.width / now.rect.width : 1
+				// a stack entry is a little row with text: it glides in, it doesn't balloon to a card's size
+				if (now.el.classList.contains('stack-item')) sc = Math.min(1.25, sc)
+				fly(now.el, [{ translate: `${dx}px ${dy}px`, scale: String(sc) }, { translate: '0 0', scale: '1' }], { duration: z0.zone === z1.zone ? 260 : 420, easing: 'cubic-bezier(.2,.8,.2,1)' })
 				continue
 			}
 			if (z0.zone === z1.zone && z0.zone !== 'gone') continue // e.g. a land group showing a different land
@@ -116,10 +177,10 @@ export function useMotion(root: RefObject<HTMLElement | null>, s: GameState) {
 				const a = center(pile)
 				const b = center(now.rect)
 				const sc = pile.width && now.rect.width ? Math.min(1.4, pile.width / now.rect.width) : 0.6
-				now.el.animate([{ translate: `${(a.x - b.x) / k}px ${(a.y - b.y) / k}px`, scale: String(sc), opacity: 0.4 }, { translate: '0 0', scale: '1', opacity: 1 }], { duration: 460, easing: 'cubic-bezier(.2,.8,.2,1)', delay: z1.zone === 'battlefield' ? lungeDelay : 0, fill: 'backwards' })
+				fly(now.el, [{ translate: `${(a.x - b.x) / k}px ${(a.y - b.y) / k}px`, scale: String(sc), opacity: 0.4 }, { translate: '0 0', scale: '1', opacity: 1 }], { duration: 460, easing: 'cubic-bezier(.2,.8,.2,1)', delay: z1.zone === 'battlefield' ? lungeDelay : 0, fill: 'backwards' })
 			} else if (z1.zone === 'battlefield') {
 				// a token (or something with no visible origin) materialises
-				now.el.animate([{ scale: '0.3', opacity: 0, filter: 'brightness(2.4) drop-shadow(0 0 12px #9cf)' }, { scale: '1.08', opacity: 1, offset: 0.7 }, { scale: '1', opacity: 1, filter: 'none' }], { duration: 520, easing: 'ease-out', delay: lungeDelay, fill: 'backwards' })
+				fly(now.el, [{ scale: '0.3', opacity: 0, filter: 'brightness(2.4) drop-shadow(0 0 12px #9cf)' }, { scale: '1.08', opacity: 1, offset: 0.7 }, { scale: '1', opacity: 1, filter: 'none' }], { duration: 520, easing: 'ease-out', delay: lungeDelay, fill: 'backwards' })
 			}
 		}
 

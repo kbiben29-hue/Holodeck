@@ -1,4 +1,4 @@
-import { useCallback, useEffect, useLayoutEffect, useRef, useState } from 'react'
+import { useCallback, useEffect, useLayoutEffect, useMemo, useRef, useState } from 'react'
 import { actor, botStep } from './bot/bot'
 import { buildGame } from './data/build'
 import { allNames } from './data/decks'
@@ -153,7 +153,6 @@ export default function App() {
 	const setPace = (p: Pace) => (writePace(p), setPaceState(p))
 	/** In-between moments of the latest move (attack declared, spell on the stack, damage…), played back before it. */
 	const framesOf = useRef(new WeakMap<GameState, GameState[]>())
-	const [shown, setShown] = useState<GameState | null>(null)
 	const skipRef = useRef<() => void>(() => {})
 	const sessionRef = useRef<Session | null>(null)
 	const lobbyRef = useRef<Lobby | null>(null)
@@ -187,33 +186,33 @@ export default function App() {
 
 	const state = session?.history[session.history.length - 1]
 
-	// Play back the in-between moments of the latest move, one beat each; a click skips.
-	useEffect(() => {
-		if (!state) return
+	// Play back the in-between moments of the latest move, one beat each; a click skips. The first in-between
+	// moment is what the very first paint shows (never the end result first, which made cards flash in twice).
+	const frames = useMemo(() => {
+		if (!state || !beatFor(pace)) return []
 		const all = framesOf.current.get(state) ?? []
+		return all.filter((f) => f.log.length < state.log.length || f.stack.length !== state.stack.length || f.step !== state.step)
+	}, [state]) // eslint-disable-line react-hooks/exhaustive-deps
+	const [beatAt, setBeatAt] = useState<{ s: GameState | null; i: number }>({ s: null, i: 0 })
+	const beatI = beatAt.s === state ? beatAt.i : 0
+	const shown = beatI < frames.length ? frames[beatI] : null
+	useEffect(() => {
+		if (!state || !frames.length) return
 		framesOf.current.delete(state)
-		const beat = beatFor(pace)
-		const fr = all.filter((f) => f.log.length < state.log.length || f.stack.length !== state.stack.length || f.step !== state.step)
-		if (!beat || !fr.length) {
-			setShown(null)
-			return
-		}
 		let i = 0
-		setShown(fr[0])
 		let timer = 0
 		const tick = () => {
 			i++
-			if (i >= fr.length) return setShown(null)
-			setShown(fr[i])
-			timer = window.setTimeout(tick, beat)
+			setBeatAt({ s: state, i })
+			if (i < frames.length) timer = window.setTimeout(tick, beatFor(pace))
 		}
-		timer = window.setTimeout(tick, beat)
+		timer = window.setTimeout(tick, beatFor(pace))
 		skipRef.current = () => {
 			window.clearTimeout(timer)
-			setShown(null)
+			setBeatAt({ s: state, i: frames.length })
 		}
 		return () => window.clearTimeout(timer)
-	}, [state])
+	}, [state, frames]) // eslint-disable-line react-hooks/exhaustive-deps
 
 	useEffect(() => {
 		if (session) saveSession(session)

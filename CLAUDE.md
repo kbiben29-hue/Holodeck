@@ -45,8 +45,12 @@ npm run build
 - `src/ui/sfx.ts` — sounds, mute in the top bar: recorded CC0 effects in `public/sfx` (Kenney Sci-Fi Sounds, see its
   README) picked per card by `soundFor` (Spacecraft fire phasers, Klingons disruptors, Borg beams, spells torpedoes;
   deaths explode, exile beams out), plus Web Audio synthesis as fallback. No music, nothing from the shows.
+  Bloomburrow adds CC0 nature recordings (`bb_*`) and a quiet looping forest/stream bed (`setAmbience`).
+- `src/ui/TableFx.tsx` — living backdrop per world (stars + warp streaks / embers + mist / fireflies + leaves); the
+  table is themed by `world-<w>` on `.board`/`.pocket` and `data-world` on `<html>`. Glows: green play, cyan ability,
+  orange attack, blue block (`usable` in Board.tsx).
 - Pacing: `withFrames(() => tryApply(…))` returns the in-between states one move auto-passed through (`snap` in
-  `settle`); App plays them back one beat each (`ui/prefs.ts` Animation: Full/Fast/Off, click skips) before the result.
+  `settle`); App plays them back one beat each (the first frame is the first paint — never the end state first) (`ui/prefs.ts` Animation: Full/Fast/Off, click skips) before the result.
 - `src/ui/Arrows.tsx` — SVG arrows: stack targets (`data-sid` → `data-iid`/`data-life`), attacks, blocks, drag-to-block.
 - `src/ui/motion.ts` — Arena-style motion: diffs `[data-iid]` elements between renders (FLIP moves, draws from
   `data-anchor` piles, ghosts to the graveyard, lunges, floating damage/life numbers). Keep `data-iid` unique per card.
