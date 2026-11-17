@@ -44,6 +44,10 @@ npm run build
 - `src/ui/Arrows.tsx` — SVG arrows: stack targets (`data-sid` → `data-iid`/`data-life`), attacks, blocks, drag-to-block.
 - `src/ui/motion.ts` — Arena-style motion: diffs `[data-iid]` elements between renders (FLIP moves, draws from
   `data-anchor` piles, ghosts to the graveyard, lunges, floating damage/life numbers). Keep `data-iid` unique per card.
+- Arena-style handling (mouse): click a playable card to play it, click a land to tap it, click a permanent for its
+  `AbilityBubble`, right-click to inspect, Space/Enter = main button, Esc = put down; targeting shows an aim arrow
+  (`aimFrom` in Arrows.tsx) and a compact prompt. Engine: `fullControl` / `stops` player prefs (ManualOp `prefs`).
+  Touch keeps tap-to-select (sheet), drag to play, long-press to enlarge.
 - Drag to play: `beginDrag` in Board.tsx (hand/command card → `[data-drop]` play/graveyard/exile); `flyFrom` in motion.ts
   starts the card's next move from where it was dropped.
 - `src/ui/Finale.tsx` — end of game: warp jump (win), red alert + warp-core breach (lose), assimilation (lose to

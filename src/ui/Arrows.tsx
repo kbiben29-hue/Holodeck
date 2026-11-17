@@ -9,7 +9,7 @@ interface Line {
 	key: string
 	from: string
 	to: string
-	kind: 'mine' | 'theirs' | 'attack' | 'block' | 'plan'
+	kind: 'mine' | 'theirs' | 'attack' | 'block' | 'plan' | 'aim'
 }
 interface Drawn extends Line {
 	d: string
@@ -17,7 +17,7 @@ interface Drawn extends Line {
 	y2: number
 }
 
-export function Arrows({ host, s, me, attackSel, blocks, blockFrom }: { host: RefObject<HTMLElement | null>; s: GameState; me: number; attackSel: number[]; blocks: { blocker: number; attacker: number }[]; blockFrom: number | null }) {
+export function Arrows({ host, s, me, attackSel, blocks, blockFrom, aimFrom = null }: { host: RefObject<HTMLElement | null>; s: GameState; me: number; attackSel: number[]; blocks: { blocker: number; attacker: number }[]; blockFrom: number | null; aimFrom?: string | null }) {
 	const [drawn, setDrawn] = useState<Drawn[]>([])
 	const [size, setSize] = useState({ w: 0, h: 0 })
 	const [pointer, setPointer] = useState<{ x: number; y: number } | null>(null)
@@ -74,10 +74,11 @@ export function Arrows({ host, s, me, attackSel, blocks, blockFrom }: { host: Re
 		return () => window.removeEventListener('resize', on)
 	}, [])
 
-	// the line that follows the pointer while you pick a creature's block
+	// the line that follows the pointer while you pick a creature's block (or a target)
+	const following = blockFrom !== null ? `[data-iid="${blockFrom}"]` : aimFrom
 	useEffect(() => {
 		const el = host.current
-		if (!el || blockFrom === null) return setPointer(null)
+		if (!el || !following) return setPointer(null)
 		const move = (e: PointerEvent) => {
 			const hr = el.getBoundingClientRect()
 			const k = el.offsetWidth ? hr.width / el.offsetWidth : 1
@@ -85,18 +86,19 @@ export function Arrows({ host, s, me, attackSel, blocks, blockFrom }: { host: Re
 		}
 		el.addEventListener('pointermove', move)
 		return () => el.removeEventListener('pointermove', move)
-	}, [blockFrom, host])
+	}, [following, host])
 
 	let live: Drawn | null = null
-	if (blockFrom !== null && pointer && host.current) {
+	if (following && pointer && host.current) {
 		const el = host.current
-		const n = el.querySelector(`[data-iid="${blockFrom}"] .cardface`) ?? el.querySelector(`[data-iid="${blockFrom}"]`)
+		const src = el.querySelector(following)
+		const n = src && !src.matches('.cardface, .stack-item') ? (src.querySelector('.cardface') ?? src) : src
 		if (n) {
 			const hr = el.getBoundingClientRect()
 			const k = el.offsetWidth ? hr.width / el.offsetWidth : 1
 			const r = n.getBoundingClientRect()
 			const a = { x: (r.left + r.width / 2 - hr.left) / k, y: (r.top + r.height / 2 - hr.top) / k, w: 0, h: 0 }
-			live = { key: 'live', from: '', to: '', kind: 'plan', ...path(a, { ...pointer, w: 0, h: 0 }) }
+			live = { key: 'live', from: '', to: '', kind: blockFrom !== null ? 'plan' : 'aim', ...path(a, { ...pointer, w: 0, h: 0 }) }
 		}
 	}
 
@@ -105,7 +107,7 @@ export function Arrows({ host, s, me, attackSel, blocks, blockFrom }: { host: Re
 	return (
 		<svg className="arrows" width={size.w} height={size.h} viewBox={`0 0 ${size.w} ${size.h}`}>
 			<defs>
-				{(['mine', 'theirs', 'attack', 'block', 'plan'] as const).map((k) => (
+				{(['mine', 'theirs', 'attack', 'block', 'plan', 'aim'] as const).map((k) => (
 					<marker key={k} id={`ah-${k}`} viewBox="0 0 10 10" refX="7" refY="5" markerWidth="4" markerHeight="4" orient="auto-start-reverse">
 						<path d="M0,0 L10,5 L0,10 z" className={`ah ${k}`} />
 					</marker>

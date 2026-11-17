@@ -933,7 +933,13 @@ function targetName(s: GameState, t: Target): string {
 }
 
 function afterStackAdd(s: GameState, p: number) {
-	// The player who added to the stack is treated as passing; the other player gets priority.
+	// The player who added to the stack is treated as passing (like Arena); the other player gets priority.
+	// With full control you keep priority to respond to your own spell.
+	if (s.players[p].fullControl) {
+		s.passes = 0
+		s.pending = { kind: 'priority', player: p }
+		return
+	}
 	s.passes = 1
 	s.pending = { kind: 'priority', player: opp(p) }
 }
@@ -1473,7 +1479,14 @@ function flushTriggers(s: GameState) {
 
 /** Would the player with priority want to stop here? If not, they pass automatically. */
 function wantsStop(s: GameState, p: number): boolean {
-	if (s.stack.length) return canAct(s, p)
+	const pl = s.players[p]
+	if (s.stack.length) {
+		// like Arena: after you cast something you pass priority unless you asked for full control
+		// (the opponent still gets their chance to respond)
+		if (s.stack[s.stack.length - 1].controller === p && !pl.fullControl && !pl.bot) return false
+		return canAct(s, p)
+	}
+	if (pl.stops?.includes(s.step) && !pl.bot) return true
 	if (p === s.active && isMain(s)) return true
 	if (p === s.active && s.step === 'cleanup') return false
 	if (p !== s.active && (s.step === 'end' || s.step === 'blockers' || s.step === 'beginCombat')) return canAct(s, p)
@@ -1794,6 +1807,12 @@ function manual(s: GameState, p: number, m: ManualOp) {
 		return l ? cardName(s, l.obj.card) : 'card'
 	}
 	switch (m.op) {
+		case 'prefs': {
+			const pl = s.players[m.player]
+			if (m.fullControl !== undefined) pl.fullControl = m.fullControl
+			if (m.stops) pl.stops = m.stops
+			return
+		}
 		case 'move': {
 			const l = locate(s, m.iid)
 			if (!l) throw new Illegal('Card not found.')

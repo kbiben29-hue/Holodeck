@@ -173,6 +173,10 @@ export interface PlayerState {
 	/** Looked-at top cards (only shown to this player). */
 	peek?: number
 	bot?: boolean
+	/** Keep priority after casting your own spells (otherwise it passes automatically, like Arena). */
+	fullControl?: boolean
+	/** Steps where this player always gets to act, on either player's turn. */
+	stops?: Step[]
 }
 
 export type Step =
@@ -319,6 +323,8 @@ export type ManualOp =
 	| { op: 'copySpell'; sid: number }
 	| { op: 'counterSpell'; sid: number }
 	| { op: 'sick'; iid: number; sick: boolean }
+	/** Arena-style priority settings: hold priority after your own spells, and steps to always stop at. */
+	| { op: 'prefs'; player: number; fullControl?: boolean; stops?: Step[] }
 
 export type Intent =
 	| { type: 'keep'; player: number }

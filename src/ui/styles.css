@@ -2720,3 +2720,177 @@ body {
 	border-left: 0;
 	border-radius: 0 999px 999px 0;
 }
+
+/* ───────── Arena-style handling ───────── */
+/* the hand fans out along an arc; the card under the mouse rises */
+.board .hand.m {
+	overflow: visible;
+	justify-content: center;
+	padding-top: 14px;
+}
+.board .hand.m .cardface {
+	transform: translateY(var(--fan-y, 0)) rotate(var(--fan-r, 0));
+	transform-origin: 50% 130%;
+	transition: transform 0.16s ease-out, box-shadow 0.15s, margin 0.2s;
+}
+.board .hand.m .cardface:hover {
+	transform: translateY(-38px) scale(1.14) rotate(0deg);
+	z-index: 90 !important;
+}
+@media (hover: none) {
+	.board .hand.m .cardface:hover {
+		transform: translateY(var(--fan-y, 0)) rotate(var(--fan-r, 0));
+	}
+}
+/* attackers step forward toward the opponent; blockers step up to meet them */
+.perm {
+	top: 0;
+	transition: width 0.15s, top 0.2s ease-out;
+}
+.side.me .perm:has(> .cardface.attacking),
+.p-field.me .perm:has(> .cardface.attacking) {
+	top: -16px;
+}
+.side.them .perm:has(> .cardface.attacking),
+.p-field.them .perm:has(> .cardface.attacking) {
+	top: 16px;
+}
+.side.me .perm:has(> .cardface.blocking),
+.p-field.me .perm:has(> .cardface.blocking) {
+	top: -10px;
+}
+.side.them .perm:has(> .cardface.blocking),
+.p-field.them .perm:has(> .cardface.blocking) {
+	top: 10px;
+}
+/* the big main button */
+.prompt .pbtns button.big-go {
+	min-width: 170px;
+	font-size: 20px;
+	padding: 10px 26px;
+	box-shadow: 0 0 0 2px #000, 0 0 18px rgba(255, 156, 58, 0.55);
+}
+.prompt button kbd {
+	margin-left: 10px;
+	padding: 1px 6px;
+	border-radius: 5px;
+	font: 600 11px/1.4 'Antonio', sans-serif;
+	letter-spacing: 0.06em;
+	background: rgba(0, 0, 0, 0.25);
+	color: inherit;
+	vertical-align: middle;
+}
+.pocket .prompt .pbtns button.big-go {
+	min-width: 0;
+	font-size: 15px;
+	padding: 8px 18px;
+}
+/* phase stops */
+.ph.can-stop {
+	cursor: pointer;
+}
+.ph.stop {
+	box-shadow: inset 0 -3px 0 var(--gold);
+	color: var(--gold);
+}
+.ph.stop::after {
+	content: ' ●';
+	font-size: 0.7em;
+}
+/* targeting arrow following the pointer */
+.arrow.aim path {
+	stroke: #ffffff;
+}
+.ah.aim {
+	fill: #ffffff;
+}
+.arrow.aim .arrow-line {
+	stroke-dasharray: none;
+	animation: none;
+}
+/* ability bubble */
+.bubble {
+	position: absolute;
+	z-index: 650;
+	width: 320px;
+	display: flex;
+	flex-direction: column;
+	gap: 6px;
+	padding: 10px;
+	border-radius: 16px;
+	background: rgba(12, 12, 26, 0.96);
+	border: 2px solid var(--lilac);
+	box-shadow: 0 14px 40px rgba(0, 0, 0, 0.7);
+	animation: bubble-in 0.14s ease-out;
+}
+@keyframes bubble-in {
+	from {
+		opacity: 0;
+		transform: translateX(-8px) scale(0.96);
+	}
+}
+.bubble-title {
+	font-size: 14px;
+	text-transform: uppercase;
+	letter-spacing: 0.08em;
+	color: var(--lilac);
+	padding: 0 4px 2px;
+}
+.bubble button {
+	display: flex;
+	align-items: center;
+	gap: 8px;
+	text-align: left;
+	border-radius: 12px;
+	padding: 8px 12px;
+	font-size: 15px;
+	line-height: 1.25;
+}
+.bubble button.ab {
+	background: var(--orange);
+}
+.bubble .ab-cost {
+	flex: none;
+}
+.bubble .ab-text {
+	flex: 1;
+}
+.bubble .bubble-more {
+	background: transparent;
+	color: var(--dim);
+	border: 1px solid var(--line);
+	justify-content: center;
+}
+/* opponent's hand, face down */
+.opp-hand {
+	display: inline-flex;
+	align-items: center;
+	margin: 0 6px;
+}
+.opp-card {
+	display: inline-block;
+	width: 18px;
+	height: 26px;
+	margin-left: -9px;
+	border-radius: 3px;
+	background: radial-gradient(circle at 50% 50%, #6b4fa8 0 30%, #2b1d4a 31% 60%, #160f2a 61%);
+	border: 1px solid #8a72c9;
+	box-shadow: 0 1px 3px #000;
+	transform-origin: 50% 120%;
+}
+.qpanel.compact {
+	width: auto;
+	max-width: 520px;
+	padding: 10px 16px;
+	display: flex;
+	flex-direction: column;
+	gap: 4px;
+	align-items: flex-start;
+}
+.qpanel.compact .mini-list {
+	font-size: 13px;
+	padding: 4px 12px;
+	background: transparent;
+	color: var(--dim);
+	border: 1px solid var(--line);
+}

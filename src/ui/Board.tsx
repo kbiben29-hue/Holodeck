@@ -1,7 +1,8 @@
-import { useEffect, useMemo, useRef, useState, type MouseEvent, type PointerEvent, type ReactNode } from 'react'
+import { useEffect, useMemo, useRef, useState, type CSSProperties, type MouseEvent, type PointerEvent, type ReactNode } from 'react'
 import { abilityProblem, canAttack, canBlock, canCast, canPlayLand, commanderTax, manaAbilitiesOf, spellCost, STEP_NAMES, tryApply } from '../engine/engine'
 import { costText } from '../engine/mana'
 import { flyFrom, useMotion } from './motion'
+import { NAMED } from '../engine/named'
 import type { Pace } from './prefs'
 import { Arrows } from './Arrows'
 import { Finale } from './Finale'
@@ -77,6 +78,8 @@ export function Board(props: BoardProps) {
 	useMotion(boardRef, s)
 	/** Card enlarged beside the mouse pointer (stage coordinates on the table, screen coordinates on touch). */
 	const [zoom, setZoom] = useState<{ iid: number; x: number; y: number } | null>(null)
+	/** Arena-style bubble beside a permanent: its abilities, or which colour of mana to make. */
+	const [pop, setPop] = useState<{ iid: number; x: number; y: number } | null>(null)
 	/** Card enlarged by a long press: stays until the next tap. */
 	const [pinned, setPinned] = useState<number | null>(null)
 	/** Hovering a card: show it in the viewer and enlarged beside the pointer (table layout). */
@@ -84,11 +87,11 @@ export function Board(props: BoardProps) {
 		setHover(iid)
 		// touch screens send mouse events on tap too: there, a long press enlarges the card instead
 		if (!e || touchy.current) return
-		zoomAt(iid, e.currentTarget.getBoundingClientRect())
+		zoomAt(iid, e.currentTarget.getBoundingClientRect(), !!e.currentTarget.closest('.hand'))
 	}
 	/** Pointer type of the latest press ('touch' / 'pen' on an iPad). */
 	const touchy = useRef(typeof matchMedia === 'function' && matchMedia('(hover: none)').matches)
-	const zoomAt = (iid: number, r: DOMRect) => {
+	const zoomAt = (iid: number, r: DOMRect, above = false) => {
 		const b = boardRef.current
 		if (!b) return
 		if (layout !== 'console') {
@@ -107,6 +110,12 @@ export function Board(props: BoardProps) {
 		const left = (r.left - br.left) / k
 		const right = (r.right - br.left) / k
 		const cy = (r.top + r.height / 2 - br.top) / k
+		if (above) {
+			// cards in hand: show it above the hand, so the rest of the hand stays visible (like Arena)
+			const top = (r.top - br.top) / k
+			const cx = (left + right) / 2
+			return setZoom({ iid, x: Math.max(4, Math.min(1600 - W - 4, cx - W / 2)), y: Math.max(4, top - Hh - 40) })
+		}
 		const x = right + 16 + W <= 1600 ? right + 16 : Math.max(4, left - 16 - W)
 		const y = Math.max(4, Math.min(1000 - Hh - 4, cy - Hh / 2))
 		setZoom({ iid, x, y })
@@ -121,6 +130,7 @@ export function Board(props: BoardProps) {
 	const touchHandlers = {
 		onPointerDownCapture: (e: PointerEvent<HTMLDivElement>) => {
 			touchy.current = e.pointerType !== 'mouse'
+			if (pop && !(e.target as HTMLElement).closest('.bubble')) setPop(null)
 			if (pinned !== null) {
 				// the tap that puts the enlarged card away does nothing else
 				e.stopPropagation()
@@ -181,7 +191,14 @@ export function Board(props: BoardProps) {
 			e.preventDefault()
 		},
 		onContextMenu: (e: MouseEvent<HTMLDivElement>) => {
-			if (touchy.current) e.preventDefault()
+			if (touchy.current) return e.preventDefault()
+			// right-click a card: look at it and its table tools (Arena: right-click to inspect)
+			const el = (e.target as HTMLElement).closest<HTMLElement>('[data-iid]')
+			if (!el) return
+			e.preventDefault()
+			setPop(null)
+			setSel({ iid: Number(el.dataset.iid) })
+			if (layout === 'pocket') setSheet(true)
 		},
 	}
 	const lastTap = useRef<{ iid: number; at: number } | null>(null)
@@ -284,6 +301,30 @@ export function Board(props: BoardProps) {
 		window.addEventListener('pointerup', finish)
 		window.addEventListener('pointercancel', cancel)
 	}
+	// keyboard, like Arena: Space / Enter = the main button, Esc = put things down
+	const primaryRef = useRef<(() => void) | null>(null)
+	useEffect(() => {
+		const key = (e: KeyboardEvent) => {
+			const tag = (e.target as HTMLElement | null)?.tagName
+			if (tag === 'INPUT' || tag === 'TEXTAREA' || tag === 'SELECT') return
+			if (e.key === 'Escape') {
+				setPop(null)
+				setSel(null)
+				setBlockFrom(null)
+				setAttachFrom(null)
+				return
+			}
+			if ((e.key === ' ' || e.key === 'Enter') && !e.repeat) {
+				if (props.busy) props.onSkip?.()
+				else if (primaryRef.current) primaryRef.current()
+				else return
+				e.preventDefault()
+			}
+		}
+		window.addEventListener('keydown', key)
+		return () => window.removeEventListener('keydown', key)
+	}, [props.busy])
+	useEffect(() => setPop(null), [s.log.length, s.pending.kind])
 	useEffect(() => {
 		if (pinned === null) return
 		const key = (e: KeyboardEvent) => e.key === 'Escape' && setPinned(null)
@@ -396,6 +437,30 @@ export function Board(props: BoardProps) {
 			}
 			if (assignBlock(p)) return
 		}
+		// Arena: with a mouse, a land (or mana rock) taps for mana; anything with abilities opens a bubble
+		if (!touchy.current && p.controller === me && !props.busy && pend.kind === 'priority' && pend.player === me) {
+			const mana = manaAbilitiesOf(s, p).filter((x) => x.ok && x.amount)
+			const abil = rulesOf(s, p).activated.filter((a) => !abilityProblem(s, me, p, a))
+			const colours = mana.flatMap((m) => (m.a.kind === 'fixed' ? [m.options[0]] : m.options))
+			if (!abil.length && mana.length === 1 && colours.length === 1) {
+				act({ type: 'tapForMana', player: me, iid: p.iid, ability: mana[0].a.index, color: colours[0] })
+				return
+			}
+			if (abil.length || mana.length) {
+				const el = boardRef.current?.querySelector(`[data-iid="${p.iid}"] .cardface`) ?? boardRef.current?.querySelector(`[data-iid="${p.iid}"]`)
+				const b = boardRef.current
+				if (el && b) {
+					const r = el.getBoundingClientRect()
+					const br = b.getBoundingClientRect()
+					const k = b.offsetWidth ? br.width / b.offsetWidth : 1
+					setZoom(null)
+					setPop({ iid: p.iid, x: (r.right - br.left) / k + 6, y: (r.top - br.top) / k })
+					setSel({ iid: p.iid })
+					return
+				}
+			}
+		}
+		setPop(null)
 		setSel({ iid: p.iid })
 		if (layout === 'pocket') setSheet(true)
 	}
@@ -408,7 +473,17 @@ export function Board(props: BoardProps) {
 		setBlockFrom(null)
 		return true
 	}
-	const clickCard = (o: Obj) => {
+	const clickCard = (o: Obj, e?: MouseEvent) => {
+		setPop(null)
+		// Arena: with a mouse, clicking a card you can play plays it (right-click or shift-click to look at it)
+		if (!touchy.current && !e?.shiftKey && playable(s, me, o) && !props.busy) {
+			const r = rulesOf(s, o)
+			const el = (e?.currentTarget as HTMLElement | undefined) ?? null
+			if (el) flyFrom(o.iid, el.getBoundingClientRect())
+			if (r.types.includes('land')) act({ type: 'playLand', player: me, iid: o.iid })
+			else act({ type: 'cast', player: me, iid: o.iid })
+			return
+		}
 		setSel({ iid: o.iid })
 		if (layout === 'pocket') setSheet(true)
 	}
@@ -468,7 +543,7 @@ export function Board(props: BoardProps) {
 					}}
 					onMouseEnter={(e) => peek(p.iid, e)} onMouseLeave={unpeek}
 				>
-					<span className="dbl" onDoubleClick={() => dbl(p)} />
+					
 					{p.sick && creature && p.controller === s.active && <span className="badge sick" title="Summoning sick">z</span>}
 					{p.token && <span className="badge tok">token</span>}
 					{p.commander && <span className="badge cmd">★</span>}
@@ -573,7 +648,7 @@ export function Board(props: BoardProps) {
 					<span className="pile-label">Command{pl.command.some((o) => pl.commanderCasts[o.card]) ? ` +${commanderTax(s, p, pl.command[0]?.card ?? '')}` : ''}</span>
 					<div className="pile-card" data-anchor={`command-${p}`}>
 						{pl.command.length ? (
-							pl.command.map((o) => <CardFaceView key={o.iid} iid={o.iid} def={def(s, o.card)} className={`${sel?.iid === o.iid ? 'sel' : ''} ${isMe && playable(s, me, o) ? 'playable' : ''} ${hHand.has(o.iid) ? 'hint' : ''}`} onPointerDown={isMe ? (e) => beginDrag(e, o, 'command') : undefined} onClick={(e) => (e.stopPropagation(), clickCard(o))} onMouseEnter={(e) => peek(o.iid, e)} onMouseLeave={unpeek} />)
+							pl.command.map((o) => <CardFaceView key={o.iid} iid={o.iid} def={def(s, o.card)} className={`${sel?.iid === o.iid ? 'sel' : ''} ${isMe && playable(s, me, o) ? 'playable' : ''} ${hHand.has(o.iid) ? 'hint' : ''}`} onPointerDown={isMe ? (e) => beginDrag(e, o, 'command') : undefined} onClick={(e) => (e.stopPropagation(), clickCard(o, e))} onMouseEnter={(e) => peek(o.iid, e)} onMouseLeave={unpeek} />)
 						) : (
 							<div className="pile-empty" />
 						)}
@@ -584,6 +659,13 @@ export function Board(props: BoardProps) {
 	}
 
 	const hand = s.players[me].hand
+	/** Arena-style fan: cards overlap more as the hand grows and tilt along a gentle arc. */
+	const fan = (i: number, n: number): CSSProperties => {
+		const mid = (n - 1) / 2
+		const d = i - mid
+		const overlap = n <= 6 ? 6 : n <= 9 ? -22 : -46
+		return { zIndex: i, ['--fan-r' as string]: `${d * (n > 7 ? 2.2 : 3)}deg`, ['--fan-y' as string]: `${Math.abs(d) * Math.abs(d) * (n > 7 ? 1.6 : 2.4)}px`, marginLeft: i === 0 ? 0 : overlap }
+	}
 	const handView = (size: 'm' | 's') => (
 		<div className={`hand ${size}`}>
 			{hand.map((o, i) =>
@@ -595,8 +677,8 @@ export function Board(props: BoardProps) {
 						iid={o.iid}
 						def={def(s, o.card)}
 						className={`${sel?.iid === o.iid ? 'sel' : ''} ${playable(s, me, o) ? 'playable' : ''} ${hHand.has(o.iid) ? 'hint' : ''}`}
-						style={layout === 'console' ? { zIndex: i } : undefined}
-						onClick={() => clickCard(o)}
+						style={layout === 'console' ? fan(i, hand.length) : undefined}
+						onClick={(e) => clickCard(o, e)}
 						onPointerDown={(e) => beginDrag(e, o, 'hand')}
 						onMouseEnter={(e) => peek(o.iid, e)} onMouseLeave={unpeek}
 					>
@@ -619,6 +701,13 @@ export function Board(props: BoardProps) {
 					{pl.name}
 					{pl.bot ? ' 🤖' : ''}
 				</span>
+				{!isMe && layout === 'console' && pl.hand.length > 0 && (
+					<span className="opp-hand" title={`${pl.hand.length} cards in hand`}>
+						{pl.hand.slice(0, 12).map((o, i) => (
+							<span key={o.iid} className="opp-card" style={{ rotate: `${(i - (Math.min(12, pl.hand.length) - 1) / 2) * 4}deg` }} />
+						))}
+					</span>
+				)}
 				<span className="life" title="Life (tap ± to change)">
 					<button className="mini" onClick={() => tool({ op: 'life', player: p, delta: -1 })}>
 						−
@@ -657,7 +746,7 @@ export function Board(props: BoardProps) {
 				{layout === 'pocket' && (
 					<span className="command" data-anchor={`command-${p}`}>
 						{pl.command.map((o) => (
-							<CardFaceView key={o.iid} iid={o.iid} def={def(s, o.card)} className={`cmdcard ${sel?.iid === o.iid ? 'sel' : ''} ${isMe && playable(s, me, o) ? 'playable' : ''} ${hHand.has(o.iid) ? 'hint' : ''}`} onPointerDown={isMe ? (e) => beginDrag(e, o, 'command') : undefined} onClick={() => clickCard(o)} />
+							<CardFaceView key={o.iid} iid={o.iid} def={def(s, o.card)} className={`cmdcard ${sel?.iid === o.iid ? 'sel' : ''} ${isMe && playable(s, me, o) ? 'playable' : ''} ${hHand.has(o.iid) ? 'hint' : ''}`} onPointerDown={isMe ? (e) => beginDrag(e, o, 'command') : undefined} onClick={(e) => clickCard(o, e)} />
 						))}
 					</span>
 				)}
@@ -698,14 +787,38 @@ export function Board(props: BoardProps) {
 	const phaseBar = (
 		<div className="phases">
 			<span className="turn">T{s.turn}</span>
-			{PHASES.map((ph) => (
-				<span key={ph.label} className={`ph ${ph.steps.includes(s.step) ? 'on' : ''}`}>
-					{ph.label}
-				</span>
-			))}
+			{PHASES.map((ph) => {
+				const stopAt = ph.steps.filter((x) => x !== 'attackers' && x !== 'firstDamage' && x !== 'damage' && x !== 'endCombat' && x !== 'untap')
+				const stopped = stopAt.length > 0 && stopAt.every((x) => s.players[me].stops?.includes(x))
+				return (
+					<span
+						key={ph.label}
+						className={`ph ${ph.steps.includes(s.step) ? 'on' : ''} ${stopped ? 'stop' : ''} ${stopAt.length && !props.online ? 'can-stop' : ''}`}
+						title={stopAt.length ? (stopped ? 'Stop here: on (you always get to act here, on either turn). Click to turn off.' : 'Click to always stop here, on either turn (Arena-style stop).') : undefined}
+						onClick={() => {
+							if (!stopAt.length) return
+							const cur = s.players[me].stops ?? []
+							tool({ op: 'prefs', player: me, stops: stopped ? cur.filter((x) => !stopAt.includes(x)) : [...new Set([...cur, ...stopAt])] })
+						}}
+					>
+						{ph.label}
+					</span>
+				)
+			})}
 		</div>
 	)
 
+	// Arena-style targeting: an arrow from the spell or ability to the pointer while you pick a target
+	const aimFrom = (() => {
+		if (pend.kind !== 'choose' || pend.player !== me || props.busy) return null
+		if (!pend.question.options.some((o) => o.iid !== undefined && findPerm(s, o.iid))) return null
+		const task = s.tasks.find((x) => x.tid === pend.task)
+		const iid = (task?.data as { iid?: number } | undefined)?.iid
+		if (iid !== undefined) return `[data-iid="${iid}"]`
+		const top = s.stack[s.stack.length - 1]
+		return top ? `[data-sid="${top.sid}"]` : null
+	})()
+	primaryRef.current = attachFrom === null ? (prompt.buttons.find((b) => b.primary)?.onClick ?? null) : null
 	const promptBar = (
 		<div className={`prompt ${prompt.mine ? 'mine' : ''}`}>
 			<span className="ptext">{props.busy ? (s.log[s.log.length - 1] ?? '') : attachFrom !== null ? 'Click the permanent to attach it to (or click it again to cancel).' : blockFrom !== null ? 'Now click (or drop it on) the attacker it should block.' : prompt.text}</span>
@@ -716,8 +829,9 @@ export function Board(props: BoardProps) {
 					<button onClick={() => setAttachFrom(null)}>Cancel</button>
 				) : (
 					prompt.buttons.map((b) => (
-						<button key={b.label} className={`${b.primary ? 'primary' : ''} ${hb(b.label)}`} onClick={b.onClick}>
+						<button key={b.label} className={`${b.primary ? 'primary big-go' : ''} ${hb(b.label)}`} onClick={b.onClick}>
 							{b.label}
+							{b.primary && !touchy.current && <kbd>Space</kbd>}
 						</button>
 					))
 				)}
@@ -842,8 +956,9 @@ export function Board(props: BoardProps) {
 						</div>
 					</div>
 				)}
+				{pop && findPerm(s, pop.iid) && <AbilityBubble s={s} me={me} p={findPerm(s, pop.iid)!} x={pop.x} y={pop.y} layout={layout} act={(i) => (setPop(null), act(i))} more={() => (setPop(null), layout === 'pocket' && setSheet(true))} hb={hb} />}
 				{props.busy && <div className="busy-catch" title="Click to skip ahead" onPointerDown={(e) => (e.stopPropagation(), props.onSkip?.())} />}
-				<Arrows host={boardRef} s={s} me={me} attackSel={pend.kind === 'attackers' && pend.player === me ? attackSel : []} blocks={pend.kind === 'blockers' && pend.player === me ? blocks : []} blockFrom={blockFrom} />
+				<Arrows host={boardRef} s={s} me={me} attackSel={pend.kind === 'attackers' && pend.player === me ? attackSel : []} blocks={pend.kind === 'blockers' && pend.player === me ? blocks : []} blockFrom={blockFrom} aimFrom={aimFrom} />
 				{modals}
 			</div>
 		)
@@ -898,8 +1013,9 @@ export function Board(props: BoardProps) {
 				<div className="actions-wrap">{actions}</div>
 				{logView}
 			</div>
+			{pop && findPerm(s, pop.iid) && <AbilityBubble s={s} me={me} p={findPerm(s, pop.iid)!} x={pop.x} y={pop.y} layout={layout} act={(i) => (setPop(null), act(i))} more={() => (setPop(null), layout === 'pocket' && setSheet(true))} hb={hb} />}
 			{props.busy && <div className="busy-catch" title="Click to skip ahead" onPointerDown={(e) => (e.stopPropagation(), props.onSkip?.())} />}
-			<Arrows host={boardRef} s={s} me={me} attackSel={pend.kind === 'attackers' && pend.player === me ? attackSel : []} blocks={pend.kind === 'blockers' && pend.player === me ? blocks : []} blockFrom={blockFrom} />
+			<Arrows host={boardRef} s={s} me={me} attackSel={pend.kind === 'attackers' && pend.player === me ? attackSel : []} blocks={pend.kind === 'blockers' && pend.player === me ? blocks : []} blockFrom={blockFrom} aimFrom={aimFrom} />
 			{modals}
 		</div>
 	)
@@ -1011,6 +1127,49 @@ function usePrompt(
 
 // ───────── panels ─────────
 
+/** Arena-style bubble beside a permanent you clicked: its mana and activated abilities. */
+function AbilityBubble({ s, me, p, x, y, layout, act, more, hb }: { s: GameState; me: number; p: Perm; x: number; y: number; layout: 'console' | 'pocket'; act: (i: Intent) => boolean; more: () => void; hb: (label: string) => string }) {
+	const items: ReactNode[] = []
+	for (const m of manaAbilitiesOf(s, p)) {
+		if (!m.ok || !m.amount) continue
+		for (const col of m.a.kind === 'fixed' ? [m.options[0]] : m.options)
+			items.push(
+				<button key={`m${m.a.index}${col}`} onClick={() => act({ type: 'tapForMana', player: me, iid: p.iid, ability: m.a.index, color: col })}>
+					Add {m.a.kind === 'fixed' ? <Cost cost={m.a.mana.map((c) => `{${c}}`).join('')} small /> : <Pip m={col} n={m.amount > 1 ? m.amount : undefined} />}
+				</button>,
+			)
+	}
+	for (const a of rulesOf(s, p).activated) {
+		const why = abilityProblem(s, me, p, a)
+		if (why) continue
+		const [cost, ...rest] = a.text.split(':')
+		items.push(
+			<button key={`a${a.index}`} className={`ab ${hb(a.equip ? 'Equip' : a.text)}`} title={a.text} onClick={() => act({ type: 'activate', player: me, iid: p.iid, ability: a.index })}>
+				{a.equip ? (
+					<>
+						Equip <Cost cost={a.cost.mana} small />
+					</>
+				) : (
+					<>
+						<span className="ab-cost">{cost.length < 40 && rest.length ? <Cost cost={cost.replace(/\{T\}/g, '{T}')} small /> : null}</span>
+						<span className="ab-text">{rest.length ? rest.join(':').trim().slice(0, 90) : a.text.slice(0, 90)}</span>
+					</>
+				)}
+			</button>,
+		)
+	}
+	const W = layout === 'console' ? 1600 : window.innerWidth
+	return (
+		<div className="bubble" style={{ left: Math.min(x, W - 330), top: Math.max(4, y) }} onClick={(e) => e.stopPropagation()}>
+			<div className="bubble-title">{permName(s, p)}</div>
+			{items}
+			<button className="bubble-more" onClick={more}>
+				More…
+			</button>
+		</div>
+	)
+}
+
 function CardInfo({ s, loc }: { s: GameState; loc: Loc }) {
 	const d = def(s, loc.obj.card)
 	const p = loc.zone === 'battlefield' ? (loc.obj as Perm) : null
@@ -1037,7 +1196,7 @@ function CardInfo({ s, loc }: { s: GameState; loc: Loc }) {
 					{p.controller !== p.owner && <span>Owner: {s.players[p.owner].name}</span>}
 				</div>
 			)}
-			{!r.fullyAutomated && !d.missing && <div className="ci-hint">Some of this card’s text is done by hand (the game will remind you).</div>}
+			{!r.fullyAutomated && !NAMED[d.name] && !d.missing && <div className="ci-hint">Some of this card’s text is done by hand (the game will remind you).</div>}
 			<div className="ci-zone">{loc.zone === 'battlefield' ? `${s.players[(loc.obj as Perm).controller].name}’s battlefield` : `${s.players[loc.owner].name}’s ${loc.zone}`}</div>
 		</div>
 	)
@@ -1289,10 +1448,12 @@ function ChooseModal({ s, me, act, onHover, hb, hint }: { s: GameState; me: numb
 	const p = s.pending
 	const [pick, setPick] = useState<string[]>([])
 	const [hidden, setHidden] = useState(false)
+	const [list, setList] = useState(false)
 	const q = p.kind === 'choose' ? p.question : null
 	useEffect(() => {
 		setPick([])
 		setHidden(false)
+		setList(false)
 	}, [q?.key, p.kind === 'choose' ? p.task : 0])
 	if (!q) return null
 	const single = q.max === 1 && q.min === 1
@@ -1309,6 +1470,18 @@ function ChooseModal({ s, me, act, onHover, hb, hint }: { s: GameState; me: numb
 	}
 	const asCards = q.options.some((o) => o.card) && (q.cards || q.options.every((o) => o.card))
 	const onBoard = q.options.some((o) => o.iid !== undefined && findPerm(s, o.iid))
+	// Arena: when every choice is a card on the table, you just click it there — no list in the way
+	const allOnBoard = single && q.options.length > 0 && q.options.every((o) => o.iid !== undefined && findPerm(s, o.iid))
+	if (allOnBoard && !list)
+		return (
+			<div className="qpanel compact">
+				<div className="q-title">{q.prompt.split('\n')[0]}</div>
+				<div className="q-sub">Click a glowing card on the table.</div>
+				<button className="mini-list" onClick={() => setList(true)}>
+					Show as a list
+				</button>
+			</div>
+		)
 	if (hidden)
 		return (
 			<button className="peek-back" onClick={() => setHidden(false)}>
@@ -1554,6 +1727,16 @@ function MenuModal(props: BoardProps & { me: number; tool: (m: ManualOp) => bool
 							))}
 						</div>
 					)}
+					<div className="layout-pick" title="Arena-style: normally your own spells resolve as soon as your opponent passes. With full control you get to respond to them yourself first.">
+						Priority:
+						<button className={!s.players[me].fullControl ? 'primary' : ''} onClick={() => tool({ op: 'prefs', player: me, fullControl: false })}>
+							Auto-pass
+						</button>
+						<button className={s.players[me].fullControl ? 'primary' : ''} onClick={() => tool({ op: 'prefs', player: me, fullControl: true })}>
+							Full control
+						</button>
+					</div>
+					<p className="dim">Click a phase in the phase bar to always stop there. With a mouse: click a card to play it, click a land to tap it, right-click to inspect, Space for the main button.</p>
 					{props.onUndo && <button onClick={() => (props.onUndo!(), close())}>Undo last move</button>}
 					<button onClick={() => (confirm ? (props.send({ type: 'concede', player: me }), close()) : setConfirm(true))}>{confirm ? 'Really concede?' : 'Concede'}</button>
 					<button onClick={props.onMenu}>Leave game (it’s saved)</button>
