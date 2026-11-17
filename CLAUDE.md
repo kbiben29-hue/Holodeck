@@ -58,7 +58,9 @@ npm run build
   starts the card's next move from where it was dropped.
 - `src/ui/Finale.tsx` — end of game: warp jump (win), red alert + warp-core breach (lose), assimilation (lose to
   Borg), then an LCARS-style report; Middle-earth decks get sunrise (win) / darkness falls (lose) and a parchment report; Bloomburrow decks a firefly meadow (win) / thunderstorm (lose) and a storybook report. Canvas + synthesized sounds (`sfx.warp/redAlert/breach/assimilated`).
-- `src/ui/Board.tsx` — console (1600×1000 scaled) and pocket (phone) layouts; `src/App.tsx` — sessions,
+- `src/ui/Board.tsx` — console (1600×1000 scaled; narrower, down to 1360, on squarer screens: `useFit` sets `--stage-w`) and
+  pocket (phone) layouts. Console cards are big (creatures 126×176, other permanents 98×137, hand 150×209 peeking up from
+  the bottom) and battlefield rows shrink their cards only when full (`fit` in `field`); `src/App.tsx` — sessions,
   autosave, undo, bot loop, online host/guest. `src/config.ts` — repo/play URL.
 
 ## Hard rules

@@ -465,7 +465,7 @@ button.big {
 .board {
 	display: grid;
 	grid-template-columns: 1fr 340px;
-	width: 1600px;
+	width: var(--stage-w, 1600px);
 	height: 1000px;
 	gap: 8px;
 	padding: 8px;
@@ -3020,4 +3020,125 @@ body {
 .finale-panel.parchment.valley .fp-line {
 	font-family: Georgia, serif;
 	font-style: italic;
+}
+
+/* ───────── console: big, readable cards ─────────
+   Stage 1600×1000: opponent bar 44 · field 344 · phase strip + prompt · field 344 · hand row (bar + hand peeking up from
+   the bottom edge; a card rises fully under the mouse). Battlefield rows size their cards inline (Board.tsx `fit`). */
+.board {
+	grid-template-columns: 1fr 290px;
+	grid-template-rows: minmax(0, 1fr);
+	overflow: clip;
+}
+.board .main {
+	min-height: 0;
+}
+.board .pbar {
+	height: 44px;
+}
+.board .fieldrow,
+.board .side .field {
+	height: 344px;
+}
+.board .side .field {
+	padding: 4px 8px;
+	gap: 2px;
+}
+.board .row {
+	min-height: 0;
+	padding: 3px 2px;
+}
+.board .row.creatures {
+	--card-w: 126px;
+	--card-h: 176px;
+	height: 186px;
+	flex: none;
+}
+.board .row.lower {
+	--card-w: 98px;
+	--card-h: 137px;
+	height: 146px;
+	flex: none;
+}
+.board .ptbox {
+	font-size: 17px;
+}
+.board .piles {
+	align-content: space-evenly;
+}
+.board .handrow {
+	display: flex;
+	align-items: flex-start;
+	gap: 8px;
+	flex: 1;
+	min-height: 0;
+}
+.board .handrow .pbar {
+	flex-direction: column;
+	align-items: stretch;
+	justify-content: flex-start;
+	flex-wrap: nowrap;
+	height: auto;
+	width: 230px;
+	padding: 0 0 8px;
+	gap: 6px;
+	border-radius: 18px;
+}
+.board .handrow .pbar .pname {
+	border-radius: 18px 18px 0 0;
+	padding: 8px 14px;
+	min-width: 0;
+}
+.board .handrow .pbar > :not(.pname) {
+	margin: 0 10px;
+}
+.board .handrow .pbar .life {
+	justify-content: center;
+}
+.board .handrow .pbar .life b {
+	font-size: 34px;
+}
+.board .handrow .pbar .zones,
+.board .handrow .pbar .pool {
+	flex-wrap: wrap;
+	justify-content: center;
+}
+.board .hand.m {
+	flex: 1;
+	min-width: 0;
+	padding-top: 10px;
+}
+.board .hand.m .cardface {
+	--card-w: 150px;
+	--card-h: 209px;
+	width: 150px;
+	height: 209px;
+}
+.board .hand.m .cardface:hover,
+.board .hand.m .cardface.sel {
+	transform: translateY(-84px) scale(1.12) rotate(0deg);
+	z-index: 90 !important;
+}
+@media (hover: none) {
+	.board .hand.m .cardface.sel {
+		transform: translateY(-84px) scale(1.12) rotate(0deg);
+	}
+}
+.board .right .viewer .cardface.big {
+	--card-w: 250px;
+	--card-h: 349px;
+	width: 250px;
+	height: 349px;
+}
+.board .right .viewer-empty {
+	height: 349px;
+}
+.board .topbtns {
+	flex-wrap: nowrap;
+	gap: 5px;
+}
+.board .topbtns button {
+	padding: 6px 8px;
+	font-size: 13px;
+	white-space: nowrap;
 }

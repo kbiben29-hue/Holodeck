@@ -76,6 +76,17 @@ export function Board(props: BoardProps) {
 	const [coachMin, setCoachMin] = useState(false)
 	const [muted, setMutedState] = useState(isMuted())
 	const boardRef = useRef<HTMLDivElement>(null)
+	// the console table is 1600 wide, or narrower on squarer screens (App's useFit)
+	const [stageW, setStageW] = useState(1600)
+	useEffect(() => {
+		const b = boardRef.current
+		if (!b || layout !== 'console') return
+		const go = () => setStageW(b.offsetWidth || 1600)
+		go()
+		const ro = new ResizeObserver(go)
+		ro.observe(b)
+		return () => ro.disconnect()
+	}, [layout])
 	useMotion(boardRef, s)
 	/** Card enlarged beside the mouse pointer (stage coordinates on the table, screen coordinates on touch). */
 	const [zoom, setZoom] = useState<{ iid: number; x: number; y: number } | null>(null)
@@ -104,7 +115,8 @@ export function Board(props: BoardProps) {
 			return setZoom({ iid, x, y })
 		}
 		const br = b.getBoundingClientRect()
-		const k = br.width / 1600 || 1
+		const SW = b.offsetWidth || 1600
+		const k = br.width / SW || 1
 		// beside the card (not on top of it), so the pointer can move along a row
 		const W = 400
 		const Hh = 558
@@ -115,9 +127,9 @@ export function Board(props: BoardProps) {
 			// cards in hand: show it above the hand, so the rest of the hand stays visible (like Arena)
 			const top = (r.top - br.top) / k
 			const cx = (left + right) / 2
-			return setZoom({ iid, x: Math.max(4, Math.min(1600 - W - 4, cx - W / 2)), y: Math.max(4, top - Hh - 40) })
+			return setZoom({ iid, x: Math.max(4, Math.min(SW - W - 4, cx - W / 2)), y: Math.max(4, top - Hh - 40) })
 		}
-		const x = right + 16 + W <= 1600 ? right + 16 : Math.max(4, left - 16 - W)
+		const x = right + 16 + W <= SW ? right + 16 : Math.max(4, left - 16 - W)
 		const y = Math.max(4, Math.min(1000 - Hh - 4, cy - Hh / 2))
 		setZoom({ iid, x, y })
 	}
@@ -604,11 +616,20 @@ export function Board(props: BoardProps) {
 		const lands = mine.filter((x) => rulesOf(s, x).types.includes('land') && !isCreature(s, x))
 		const creatures = mine.filter((x) => isCreature(s, x))
 		const other = mine.filter((x) => !lands.includes(x) && !creatures.includes(x))
+		const groups = groupLands(s, lands)
+		// console: cards are as big as the row allows, shrinking only when the row fills up
+		const fit = (items: Perm[], w: number, h: number, gap: number, extra = 0): CSSProperties | undefined => {
+			if (layout !== 'console') return undefined
+			const need = items.reduce((n, x) => n + (x.tapped ? h : w) + gap, extra)
+			const k = Math.max(0.55, Math.min(1, (FIELD_W - (1600 - stageW)) / Math.max(1, need)))
+			return { ['--card-w' as string]: `${Math.round(w * k)}px`, ['--card-h' as string]: `${Math.round(h * k)}px` }
+		}
+		const lowerItems = [...groups.map((g) => g.find((x) => !x.tapped) ?? g[0]), ...other]
 		return (
 			<>
-				<div className="row creatures">{creatures.length ? creatures.map((x) => permView(x, size)) : <span className="empty">no creatures</span>}</div>
-				<div className="row lower">
-					<div className="lands">{groupLands(s, lands).map((g) => landGroup(g, size))}</div>
+				<div className="row creatures" style={fit(creatures, CREATURE_W, CREATURE_H, 8)}>{creatures.length ? creatures.map((x) => permView(x, size)) : <span className="empty">no creatures</span>}</div>
+				<div className="row lower" style={fit(lowerItems, LOWER_W, LOWER_H, 8, 24 + groups.filter((g) => g.length > 1).length * 10)}>
+					<div className="lands">{groups.map((g) => landGroup(g, size))}</div>
 					<div className="others">{other.map((x) => permView(x, size))}</div>
 				</div>
 			</>
@@ -678,7 +699,8 @@ export function Board(props: BoardProps) {
 	const fan = (i: number, n: number): CSSProperties => {
 		const mid = (n - 1) / 2
 		const d = i - mid
-		const overlap = n <= 6 ? 6 : n <= 9 ? -22 : -46
+		// the hand row is about HAND_ROW wide: overlap only as much as it takes to fit
+		const overlap = n <= 1 ? 0 : Math.min(6, Math.floor((HAND_ROW - (1600 - stageW) - HAND_W) / (n - 1)) - HAND_W)
 		return { zIndex: i, ['--fan-r' as string]: `${d * (n > 7 ? 2.2 : 3)}deg`, ['--fan-y' as string]: `${Math.abs(d) * Math.abs(d) * (n > 7 ? 1.6 : 2.4)}px`, marginLeft: i === 0 ? 0 : overlap }
 	}
 	const handView = (size: 'm' | 's') => (
@@ -1019,9 +1041,11 @@ export function Board(props: BoardProps) {
 						<div className="field" data-drop="play">{field(me, 'm')}</div>
 						{piles(me)}
 					</div>
-					{playerBar(me)}
 				</div>
-				{handView('m')}
+				<div className="handrow">
+					{playerBar(me)}
+					{handView('m')}
+				</div>
 			</div>
 			<div className="right">
 				<div className="topbtns">
@@ -1045,6 +1069,16 @@ export function Board(props: BoardProps) {
 		</div>
 	)
 }
+
+// console card sizes (stage units, 1600×1000): big enough to read at a glance
+const CREATURE_W = 126
+const CREATURE_H = 176
+const LOWER_W = 98
+const LOWER_H = 137
+/** Width a battlefield row has for cards before they start to shrink. */
+const FIELD_W = 1080
+const HAND_W = 150
+const HAND_ROW = 1010
 
 // ───────── helpers ─────────
 
@@ -1183,7 +1217,7 @@ function AbilityBubble({ s, me, p, x, y, layout, act, more, hb }: { s: GameState
 			</button>,
 		)
 	}
-	const W = layout === 'console' ? 1600 : window.innerWidth
+	const W = layout === 'console' ? (document.querySelector<HTMLElement>('.board')?.offsetWidth ?? 1600) : window.innerWidth
 	return (
 		<div className="bubble" style={{ left: Math.min(x, W - 330), top: Math.max(4, y) }} onClick={(e) => e.stopPropagation()}>
 			<div className="bubble-title">{permName(s, p)}</div>

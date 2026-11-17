@@ -14,6 +14,8 @@ import { coachFor, INTRO, type CoachStep } from './ui/coach'
 import { comboNote, deckName, DRILLS, drillCoach, drillsFor, PLANS, type DeckId } from './ui/lessons'
 
 const W = 1600
+/** The narrowest the table gets on squarer screens. */
+const MIN_W = 1360
 const H = 1000
 const SAVE = 'holodeck.save.v1'
 const LAYOUT_KEY = 'holodeck.layout'
@@ -84,7 +86,7 @@ function safeInsets() {
 const isPhone = () => typeof window !== 'undefined' && !!window.matchMedia?.('(pointer: coarse)').matches && Math.min(window.innerWidth, window.innerHeight) < 600
 
 function useFit() {
-	const [fit, setFit] = useState({ scale: 1, left: 0, top: 0 })
+	const [fit, setFit] = useState({ scale: 1, left: 0, top: 0, width: W })
 	useLayoutEffect(() => {
 		const go = () => {
 			const ins = safeInsets()
@@ -92,8 +94,11 @@ function useFit() {
 			const vh = window.visualViewport?.height ?? window.innerHeight
 			const w = vw - ins.l - ins.r
 			const h = vh - ins.t - ins.b
-			const scale = Math.min(w / W, h / H)
-			setFit({ scale, left: ins.l + (w - W * scale) / 2, top: ins.t + (h - H * scale) / 2 })
+			// squarer screens (iPad, 4:3 and 3:2 laptops) get a narrower table instead of empty bands above and
+			// below, so everything — the cards above all — is drawn bigger
+			const width = Math.round(Math.max(MIN_W, Math.min(W, (H * w) / h)))
+			const scale = Math.min(w / width, h / H)
+			setFit({ scale, left: ins.l + (w - width * scale) / 2, top: ins.t + (h - H * scale) / 2, width })
 		}
 		go()
 		window.addEventListener('resize', go)
@@ -582,7 +587,7 @@ export default function App() {
 
 	return (
 		<div className="viewport">
-			<div className="stage" style={{ width: W, height: H, transform: `scale(${scale.scale})`, left: scale.left, top: scale.top }}>
+			<div className="stage" style={{ width: scale.width, height: H, ['--stage-w' as string]: `${scale.width}px`, transform: `scale(${scale.scale})`, left: scale.left, top: scale.top }}>
 				{body}
 			</div>
 		</div>
