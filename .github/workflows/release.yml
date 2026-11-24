@@ -48,11 +48,11 @@ jobs:
       - name: Check no card data was bundled
         run: if [ -e dist/cards ]; then echo "dist/cards must not be published"; exit 1; fi
       - uses: actions/configure-pages@v5
-      - uses: actions/upload-pages-artifact@v3
+      - uses: actions/upload-pages-artifact@v5
         with:
           path: dist
       - id: deploy
-        uses: actions/deploy-pages@v4
+        uses: actions/deploy-pages@v5
 
   desktop:
     needs: check
