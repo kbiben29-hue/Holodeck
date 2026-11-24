@@ -3529,3 +3529,184 @@ html[data-world='bb'] .viewport {
 .pocket.phone-wide .p-hand {
 	padding-bottom: 3px;
 }
+
+/* ═══════════ phones in either orientation: every dialog fits the screen, its buttons always in view ═══════════ */
+.pocket .modal,
+.pocket .qpanel {
+	max-height: calc(100dvh - env(safe-area-inset-top) - env(safe-area-inset-bottom) - 12px);
+	overscroll-behavior: contain;
+}
+/* the answer buttons stay pinned to the bottom of a dialog while its cards scroll */
+.pocket .modal .modal-btns,
+.pocket .qpanel .modal-btns {
+	position: sticky;
+	bottom: -10px;
+	z-index: 2;
+	margin: 8px -10px -10px;
+	padding: 8px 10px 10px;
+	background: linear-gradient(transparent, var(--panel) 28%);
+	display: flex;
+	flex-wrap: wrap;
+	gap: 6px;
+	justify-content: center;
+}
+.pocket .qpanel .modal-btns {
+	margin: 8px -16px -12px;
+	bottom: -12px;
+}
+.pocket .modal-btns button {
+	min-height: 40px;
+}
+.modal-btns.menu-game {
+	margin-top: 10px;
+}
+.pocket .modal-title {
+	font-size: 16px;
+	margin-bottom: 6px;
+}
+
+/* sideways phone: dialogs show their cards in one row you can swipe, sized to the screen's height */
+.pocket.phone-wide .modal,
+.pocket.phone-wide .qpanel {
+	width: calc(100vw - 16px - env(safe-area-inset-left) - env(safe-area-inset-right));
+	max-width: none;
+	padding: 8px 10px 10px;
+}
+.pocket.phone-wide .qpanel {
+	top: max(4px, env(safe-area-inset-top));
+}
+.pocket.phone-wide .cardgrid {
+	flex-wrap: nowrap;
+	overflow-x: auto;
+	overscroll-behavior-x: contain;
+	padding-bottom: 4px;
+	gap: 6px;
+}
+.pocket.phone-wide .cardgrid .cardface,
+.pocket.phone-wide .qpanel .cardgrid .cardface {
+	--card-h: min(134px, 38dvh);
+	--card-w: calc(var(--card-h) * 0.716);
+	flex: none;
+}
+.pocket.phone-wide .opt-card {
+	width: auto;
+	flex: none;
+}
+.pocket.phone-wide .modal-title,
+.pocket.phone-wide .q-title {
+	font-size: 15px;
+	margin-bottom: 4px;
+}
+.pocket.phone-wide .q-sub {
+	margin: 2px 0;
+	font-size: 12px;
+}
+
+/* sideways phone: a tapped card's details sit beside it instead of below */
+.pocket.phone-wide .sheet-float {
+	top: max(4px, env(safe-area-inset-top));
+	bottom: max(4px, env(safe-area-inset-bottom));
+	right: max(6px, env(safe-area-inset-right));
+	width: min(600px, 78vw);
+	max-height: none;
+}
+.pocket.phone-wide .sheet-float .sheet {
+	display: grid;
+	grid-template-columns: auto minmax(0, 1fr);
+	align-items: start;
+	height: 100%;
+	max-height: none;
+	overflow: hidden;
+	padding: 8px;
+}
+.pocket.phone-wide .sheet-float .cardface.big {
+	--card-h: calc(100dvh - 40px);
+	height: min(300px, calc(100dvh - 40px));
+	width: calc(min(300px, calc(100dvh - 40px)) * 0.716);
+	grid-row: 1 / span 3;
+}
+.pocket.phone-wide .sheet-float .sheet > :not(.cardface):not(.sheet-x) {
+	grid-column: 2;
+	max-height: calc(100dvh - 40px);
+	overflow-y: auto;
+}
+.pocket.phone-wide .pbar .pname {
+	max-width: 76px;
+}
+.pocket.phone-wide .pbar .command .cardface {
+	--card-w: 22px;
+	--card-h: 30px;
+}
+
+/* upright phone: the tapped-card panel can't run off the bottom either */
+.pocket.phone .sheet-float {
+	max-height: calc(100dvh - 60px - env(safe-area-inset-bottom));
+}
+/* the menu's game buttons: a plain footer that never gets clipped */
+.pocket .modal .modal-btns.menu-game {
+	bottom: -10px;
+	margin: 10px -10px -10px;
+	padding: 10px;
+	background: var(--panel);
+	box-shadow: 0 -8px 12px var(--panel);
+}
+/* sideways phone: the hand peeks up from the bottom edge (names showing); tap a card to see it and play it */
+.pocket.phone-wide .p-hand {
+	height: 50px;
+	overflow: visible;
+	padding-bottom: 0;
+	align-self: end;
+}
+.pocket.phone-wide .hand {
+	overflow-x: auto;
+	overflow-y: hidden;
+	height: 50px;
+	align-items: flex-start;
+}
+.pocket.phone-wide .hand .cardface {
+	--card-w: 60px;
+	--card-h: 84px;
+}
+.pocket.phone-wide .hand .cardface.playable {
+	box-shadow: 0 -2px 0 3px #4dff9a, 0 -6px 16px 2px #36f08acc;
+}
+.pocket.phone-wide .phases .ph:not(.on) {
+	display: none;
+}
+
+/* phones: deck choice with compact tiles and the Start button always in reach */
+@media (max-width: 600px), (max-height: 500px) {
+	.deckpick {
+		grid-template-columns: repeat(auto-fill, minmax(104px, 1fr));
+		gap: 6px;
+	}
+	.decktile img,
+	.decktile .noimg {
+		aspect-ratio: 4 / 3;
+		object-position: 50% 12%;
+	}
+	.decktile .noimg {
+		font-size: 12px;
+	}
+	.dname {
+		font-size: 12px;
+	}
+	.setup-buttons {
+		position: sticky;
+		bottom: 0;
+		z-index: 5;
+		padding: 8px 0 calc(8px + env(safe-area-inset-bottom));
+		background: linear-gradient(transparent, #05070fee 30%);
+	}
+}
+.pocket .modal .modal-btns,
+.pocket .qpanel .modal-btns,
+.pocket .modal .modal-btns.menu-game {
+	bottom: 0;
+	margin-bottom: 0;
+}
+.menu-game {
+	display: flex;
+	flex-wrap: wrap;
+	gap: 6px;
+}

@@ -102,10 +102,16 @@ export function Board(props: BoardProps) {
 		}
 		go()
 		const ro = new ResizeObserver(go)
-		b.querySelectorAll('.p-field').forEach((f) => ro.observe(f))
+		const watched = new Set<Element>()
+		const watch = () => b.querySelectorAll('.p-field').forEach((f) => !watched.has(f) && (watched.add(f), ro.observe(f)))
+		watch()
 		ro.observe(b)
+		// battlefields can be rebuilt (hand-off screens, dialogs): keep watching the new ones
+		const mo = new MutationObserver(() => (watch(), go()))
+		mo.observe(b, { childList: true })
 		window.addEventListener('orientationchange', go)
-		return () => (ro.disconnect(), window.removeEventListener('orientationchange', go))
+		window.visualViewport?.addEventListener('resize', go)
+		return () => (ro.disconnect(), mo.disconnect(), window.removeEventListener('orientationchange', go), window.visualViewport?.removeEventListener('resize', go))
 	}, [layout])
 	useMotion(boardRef, s)
 	/** Card enlarged beside the mouse pointer (stage coordinates on the table, screen coordinates on touch). */
@@ -657,8 +663,10 @@ export function Board(props: BoardProps) {
 		// shrink (never below 55%) when they run out of width
 		const box = layout === 'pocket' ? fieldBox[p === me ? 'me' : 'them'] : undefined
 		const cap = props.tablet ? 230 : 150
-		const ch = box ? Math.max(48, Math.min(cap, Math.floor(box.h * 0.56) - 10)) : 0
-		const lh = box ? Math.max(42, Math.min(cap * 0.8, Math.floor(box.h * 0.44) - 10)) : 0
+		// short screens (a phone held sideways) give the creatures more of the room; lands read fine smaller
+		const share = box && box.h < 200 ? 0.62 : 0.56
+		const ch = box ? Math.max(40, Math.min(cap, Math.floor(box.h * share) - 8)) : 0
+		const lh = box ? Math.max(30, Math.min(cap * 0.8, Math.floor(box.h * (1 - share)) - 8)) : 0
 		const fit = (items: Perm[], w: number, h: number, gap: number, extra = 0): CSSProperties | undefined => {
 			if (layout === 'pocket') {
 				if (!box) return undefined
@@ -1777,6 +1785,13 @@ function MenuModal(props: BoardProps & { me: number; tool: (m: ManualOp) => bool
 	return (
 		<Modal title="Menu & table tools" onClose={close}>
 			<div className="menu-grid">
+				<section className="menu-game-top">
+					<div className="menu-game">
+						{props.onUndo && <button onClick={() => (props.onUndo!(), close())}>Undo last move</button>}
+						<button onClick={() => (confirm ? (props.send({ type: 'concede', player: me }), close()) : setConfirm(true))}>{confirm ? 'Really concede?' : 'Concede'}</button>
+						<button onClick={props.onMenu}>Leave game (it’s saved)</button>
+					</div>
+				</section>
 				<section>
 					<h4>Your library</h4>
 					<button onClick={() => tool({ op: 'draw', player: me, count: 1 })}>Draw a card</button>
@@ -1861,9 +1876,7 @@ function MenuModal(props: BoardProps & { me: number; tool: (m: ManualOp) => bool
 						</button>
 					</div>
 					<p className="dim">Click a phase in the phase bar to always stop there. With a mouse: click a card to play it, click a land to tap it, right-click to inspect, Space for the main button.</p>
-					{props.onUndo && <button onClick={() => (props.onUndo!(), close())}>Undo last move</button>}
-					<button onClick={() => (confirm ? (props.send({ type: 'concede', player: me }), close()) : setConfirm(true))}>{confirm ? 'Really concede?' : 'Concede'}</button>
-					<button onClick={props.onMenu}>Leave game (it’s saved)</button>
+
 					<p className="dim">
 						{s.format.name}: {s.format.life} life{s.format.noCommander ? ', 60-card decks, no commander' : s.format.commanderDamage ? ', 21 commander damage' : ', no commander damage'}. Double-click a land to tap it for mana. Everything the game can’t do by itself, you do with these tools — like at a real table.
 					</p>

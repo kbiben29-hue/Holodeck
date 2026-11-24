@@ -66,7 +66,9 @@ npm run build
   pocket (phone) layouts. Console cards are big (creatures 126×176, other permanents 98×137, hand 150×209 peeking up from
   the bottom) and battlefield rows shrink their cards only when full (`fit` in `field`). Touch layout (`pocket`: phones,
   iPad upright): `phone` / `phone-wide` (sideways: fields left, controls right, CSS grid) / `tablet`; each battlefield is
-  measured (`fieldBox`) and its cards sized to fill it. Touch detection includes iPads with a trackpad (`isTouch` in App); `src/App.tsx` — sessions,
+  measured (`fieldBox`) and its cards sized to fill it. On phones every dialog fits the screen in either orientation
+  (sticky `.modal-btns`, one swipeable row of cards sideways, sideways hand peeks from the bottom); the setup page keeps
+  Start in reach. Touch detection includes iPads with a trackpad (`isTouch` in App); `src/App.tsx` — sessions,
   autosave, undo, bot loop, online host/guest. `src/config.ts` — repo/play URL.
 
 ## Hard rules
